@@ -1,0 +1,262 @@
+{
+  "product": "FreeVox8",
+  "version": "0.5.0",
+  "schema": 2,
+  "presets": [
+    {
+      "name": "Classic Robot Clean",
+      "mode": "Vocoder",
+      "mix": 0.58,
+      "carrier_blend": 0.55,
+      "clarity": 0.5,
+      "air": 0.08,
+      "ghost": 0.0,
+      "quality": 0.5
+    },
+    {
+      "name": "Ghost Choir Freeze",
+      "mode": "Ghost",
+      "mix": 0.68,
+      "carrier_blend": 0.65,
+      "clarity": 0.58,
+      "air": 0.14,
+      "ghost": 0.12,
+      "quality": 0.58,
+      "freeze": 1.0
+    },
+    {
+      "name": "Alien Formant Down",
+      "mode": "Vocoder",
+      "mix": 0.78,
+      "carrier_blend": 0.75,
+      "clarity": 0.66,
+      "air": 0.2,
+      "ghost": 0.24,
+      "quality": 0.66,
+      "formant_shift": -9.0
+    },
+    {
+      "name": "Bright Talkbox Air",
+      "mode": "Vocoder",
+      "mix": 0.88,
+      "carrier_blend": 0.85,
+      "clarity": 0.74,
+      "air": 0.26,
+      "ghost": 0.36,
+      "quality": 0.74
+    },
+    {
+      "name": "Vocal Pocket Mask",
+      "mode": "Mask",
+      "mix": 0.98,
+      "carrier_blend": 0.55,
+      "clarity": 0.82,
+      "air": 0.32,
+      "ghost": 0.48,
+      "quality": 0.82,
+      "mask_depth": 0.72
+    },
+    {
+      "name": "Deep Spectral Morph",
+      "mode": "Morph",
+      "mix": 0.58,
+      "carrier_blend": 0.65,
+      "clarity": 0.9,
+      "air": 0.08,
+      "ghost": 0.6,
+      "quality": 0.9
+    },
+    {
+      "name": "Frozen Pad Wide",
+      "mode": "Ghost",
+      "mix": 0.68,
+      "carrier_blend": 0.75,
+      "clarity": 0.5,
+      "air": 0.14,
+      "ghost": 0.72,
+      "quality": 0.5,
+      "freeze": 1.0
+    },
+    {
+      "name": "Sub Carrier Monster",
+      "mode": "Vocoder",
+      "mix": 0.78,
+      "carrier_blend": 0.85,
+      "clarity": 0.58,
+      "air": 0.2,
+      "ghost": 0.0,
+      "quality": 0.58
+    },
+    {
+      "name": "Soft Vocoder Blend",
+      "mode": "Vocoder",
+      "mix": 0.88,
+      "carrier_blend": 0.55,
+      "clarity": 0.66,
+      "air": 0.26,
+      "ghost": 0.12,
+      "quality": 0.66
+    },
+    {
+      "name": "Aggressive Cyber Mask",
+      "mode": "Mask",
+      "mix": 0.98,
+      "carrier_blend": 0.65,
+      "clarity": 0.74,
+      "air": 0.32,
+      "ghost": 0.24,
+      "quality": 0.74,
+      "mask_depth": 0.72
+    },
+    {
+      "name": "Spectral Ghost 1024 Init",
+      "mode": "Ghost",
+      "mix": 0.58,
+      "carrier_blend": 0.75,
+      "clarity": 0.82,
+      "air": 0.08,
+      "ghost": 0.36,
+      "quality": 0.82,
+      "freeze": 0.0,
+      "engine": "Spectral Ghost 1024"
+    },
+    {
+      "name": "AETHER Choir Wide",
+      "mode": "Ghost",
+      "mix": 0.68,
+      "carrier_blend": 0.85,
+      "clarity": 0.9,
+      "air": 0.14,
+      "ghost": 0.48,
+      "quality": 0.9,
+      "freeze": 0.0
+    },
+    {
+      "name": "Robot Radio Narrow",
+      "mode": "Vocoder",
+      "mix": 0.78,
+      "carrier_blend": 0.55,
+      "clarity": 0.5,
+      "air": 0.2,
+      "ghost": 0.6,
+      "quality": 0.5
+    },
+    {
+      "name": "Whisper Carrier Air",
+      "mode": "Vocoder",
+      "mix": 0.88,
+      "carrier_blend": 0.65,
+      "clarity": 0.58,
+      "air": 0.26,
+      "ghost": 0.72,
+      "quality": 0.58
+    },
+    {
+      "name": "Drum To Synth Morph",
+      "mode": "Morph",
+      "mix": 0.98,
+      "carrier_blend": 0.75,
+      "clarity": 0.66,
+      "air": 0.32,
+      "ghost": 0.0,
+      "quality": 0.66
+    },
+    {
+      "name": "Dark Transmission",
+      "mode": "Vocoder",
+      "mix": 0.58,
+      "carrier_blend": 0.85,
+      "clarity": 0.74,
+      "air": 0.08,
+      "ghost": 0.12,
+      "quality": 0.74
+    },
+    {
+      "name": "Sidechain Vocal Pocket",
+      "mode": "Mask",
+      "mix": 0.68,
+      "carrier_blend": 0.55,
+      "clarity": 0.82,
+      "air": 0.14,
+      "ghost": 0.24,
+      "quality": 0.82,
+      "mask_depth": 0.72
+    },
+    {
+      "name": "Freeze Bed Smooth",
+      "mode": "Ghost",
+      "mix": 0.78,
+      "carrier_blend": 0.65,
+      "clarity": 0.9,
+      "air": 0.2,
+      "ghost": 0.36,
+      "quality": 0.9,
+      "freeze": 1.0
+    },
+    {
+      "name": "Alien Choir Up",
+      "mode": "Ghost",
+      "mix": 0.88,
+      "carrier_blend": 0.75,
+      "clarity": 0.5,
+      "air": 0.26,
+      "ghost": 0.48,
+      "quality": 0.5,
+      "freeze": 0.0,
+      "formant_shift": 7.0
+    },
+    {
+      "name": "Cyber Talkbox Lead",
+      "mode": "Vocoder",
+      "mix": 0.98,
+      "carrier_blend": 0.85,
+      "clarity": 0.58,
+      "air": 0.32,
+      "ghost": 0.6,
+      "quality": 0.58
+    },
+    {
+      "name": "Low CPU Live Vocoder",
+      "mode": "Vocoder",
+      "mix": 0.58,
+      "carrier_blend": 0.55,
+      "clarity": 0.66,
+      "air": 0.08,
+      "ghost": 0.72,
+      "quality": 0.66
+    },
+    {
+      "name": "High Detail Ghost Pad",
+      "mode": "Ghost",
+      "mix": 0.68,
+      "carrier_blend": 0.65,
+      "clarity": 0.74,
+      "air": 0.14,
+      "ghost": 0.0,
+      "quality": 0.74,
+      "freeze": 0.0,
+      "engine": "Spectral Ghost 1024"
+    },
+    {
+      "name": "Mask Delta Hard Cut",
+      "mode": "Mask",
+      "mix": 0.78,
+      "carrier_blend": 0.75,
+      "clarity": 0.82,
+      "air": 0.2,
+      "ghost": 0.12,
+      "quality": 0.82,
+      "mask_depth": 0.92
+    },
+    {
+      "name": "Morph Body Synth",
+      "mode": "Morph",
+      "mix": 0.88,
+      "carrier_blend": 0.85,
+      "clarity": 0.9,
+      "air": 0.26,
+      "ghost": 0.24,
+      "quality": 0.9
+    }
+  ]
+}

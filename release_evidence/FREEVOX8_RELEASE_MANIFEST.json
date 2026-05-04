@@ -1,0 +1,239 @@
+{
+  "product": "FreeVox8",
+  "version": "0.5.0",
+  "kind": "source-release-candidate-evidence",
+  "generated_utc": "2026-05-04T01:00:14Z",
+  "file_count": 46,
+  "files": [
+    {
+      "path": ".gitattributes",
+      "sha256": "e2ec3d690ecd42cbef8b4b1048f4b82644392fb763ad8a9c0951fdf88fc72f0c",
+      "bytes": 672
+    },
+    {
+      "path": ".github/FUNDING.yml",
+      "sha256": "93a8d75ae2340f0c04c1cb11700a2e4cc2e0ae3882d04f6f1b54ea44f835af07",
+      "bytes": 72
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/bug_report.md",
+      "sha256": "b237217504b341f6067b71c5b157c29537bf9bff35b7911f8804a2c908b36043",
+      "bytes": 232
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/config.yml",
+      "sha256": "243f9664912bfc913e9b8549a93f7d5c8b35964d7af71507ec77df22a3b5f2e9",
+      "bytes": 188
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/feature_request.md",
+      "sha256": "3304621e25e8110b44fb1ca5ef8c21724280c62391ac6ee37cce5dadf4389881",
+      "bytes": 173
+    },
+    {
+      "path": ".github/pull_request_template.md",
+      "sha256": "c401fac955422fba04571caec29fcf4e255b949a633e1ef69e6ff198eeb2792c",
+      "bytes": 359
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "sha256": "02a5a0755de5d325a8467a247abb8a0a942de4ba2a5333b758c140fdb44679a1",
+      "bytes": 530
+    },
+    {
+      "path": ".gitignore",
+      "sha256": "86f3d1b30332e3ecc288402e48584945e13f0bb0be86d1b614f2f6a7bb75cfde",
+      "bytes": 590
+    },
+    {
+      "path": ".gitmodules",
+      "sha256": "7eb92d921a133a3148be13eaf4d09715e4dbbc7c42cbe023461719f720e1d118",
+      "bytes": 82
+    },
+    {
+      "path": "CHANGELOG.md",
+      "sha256": "e42c00fb938224f65018c6410df584a897fd7b3208dcb4a022add613b3f57d0f",
+      "bytes": 1748
+    },
+    {
+      "path": "CMakeLists.txt",
+      "sha256": "85c868598e44ac60923fd0a5b178ef54efbdd19c3ce1ceb7803ba3dea56b5173",
+      "bytes": 1981
+    },
+    {
+      "path": "CODE_OF_CONDUCT.md",
+      "sha256": "44c47d417d48531fecb51147696da7e23923b635176499be7a9431d23435fe62",
+      "bytes": 2558
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "sha256": "68e4ab2fcbb22acbbe57a90625ddc71f1c012643d88083c4ca86dee5778d4a08",
+      "bytes": 669
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "02ad75e54bfa8212ff8061086eacd619e008c46930640c18718c823d07a38ffd",
+      "bytes": 35481
+    },
+    {
+      "path": "README.md",
+      "sha256": "ac03ce53d4946231ede7ed8ac273c738782e09b54243fa1b7656981fc83a29b3",
+      "bytes": 2439
+    },
+    {
+      "path": "RELEASE_MANIFEST.json",
+      "sha256": "8f075d865671965505e053b6489f905b98eeacd58c7e22cce47ebcb6d86c600c",
+      "bytes": 514
+    },
+    {
+      "path": "SECURITY.md",
+      "sha256": "374b0b5ea0ade4fcd0968bcd36b5989de19ee8926c2d314f2eea72d8f24917d2",
+      "bytes": 358
+    },
+    {
+      "path": "Source/Config.h",
+      "sha256": "1bf3ba6a62d79877ff371f5440b9b92cbe6d1b37e6785a04a5972cac1f3e34b4",
+      "bytes": 355
+    },
+    {
+      "path": "Source/DSP/FreeVox8DSP.h",
+      "sha256": "bf10b4989fddcca4451df6c2dc03d86b3ce4863a87cc8646a844b739944421f2",
+      "bytes": 15636
+    },
+    {
+      "path": "Source/DSP/FreeVox8SpectralEngine.h",
+      "sha256": "5d82dcbd3a4d6a1e2db11822b7839e06eccaa528d2bdf49674a82baf3afe0d64",
+      "bytes": 5989
+    },
+    {
+      "path": "Source/PluginEditor.cpp",
+      "sha256": "b466ec2479619a869410b2f2c1bed4d1739584a64c433ee351364df1cf4ef89f",
+      "bytes": 7820
+    },
+    {
+      "path": "Source/PluginEditor.h",
+      "sha256": "06da56515e4ea1d557d856b317eab96b8942d8b9dd8d606d2751f13a16bcd841",
+      "bytes": 1536
+    },
+    {
+      "path": "Source/PluginProcessor.cpp",
+      "sha256": "8ef8a3493708834c5709b565dd10465eedcac921e651d268c25305a2c8d0eb8e",
+      "bytes": 5972
+    },
+    {
+      "path": "Source/PluginProcessor.h",
+      "sha256": "e5bf6c353db074dd3da1f259a4b4ce77b78412c53adb859abf95a76a51ef80ba",
+      "bytes": 1792
+    },
+    {
+      "path": "Source/UI/SpectralDisplay.h",
+      "sha256": "d6fb89585c8f2aed16ef7257980ea5e65fc001e1e53527779872907e1bef3653",
+      "bytes": 411
+    },
+    {
+      "path": "Tests/RepoAudit.cpp",
+      "sha256": "cdba7d41929f69ba9d5695c2e5648124b8dee76978b5eb949f303cfd7f661549",
+      "bytes": 673
+    },
+    {
+      "path": "assets/social-preview.svg",
+      "sha256": "45fc21fea7ed29dbd55cc2d6b93b4c3c7cb7f579ad4b797a736ec85b1034fefe",
+      "bytes": 2197
+    },
+    {
+      "path": "build_linux.sh",
+      "sha256": "777c9f2a674d3a6a12179c26ac685dbc30968a4803b201e06bd70fe8bfdbdc0a",
+      "bytes": 279
+    },
+    {
+      "path": "build_macos.sh",
+      "sha256": "0cd3fc47a3f1d3a5119426a2aca3ce2c69b0cc8b705b5e60cf2087400b58487a",
+      "bytes": 260
+    },
+    {
+      "path": "build_windows.ps1",
+      "sha256": "189af8694cd5109b851e77ea94f14fb8d1db2aaaa228ebcf18bb08111b6d3b8e",
+      "bytes": 286
+    },
+    {
+      "path": "docs/ARC_GOVERNANCE_RELEASE_MODEL.md",
+      "sha256": "05ef90c0197ec6e291f903d22221e2d69c330ed3c06f1dd1a444bd7a6c19db0d",
+      "bytes": 1266
+    },
+    {
+      "path": "docs/DSP_GOLDEN_TESTS.md",
+      "sha256": "3cbfdf8556f24f429ea423feb94f71acb903f955baeabe88a46dfd52275e1222",
+      "bytes": 897
+    },
+    {
+      "path": "docs/FREEVOX8_DSP_ARCHITECTURE.md",
+      "sha256": "923ef56b8d64bf00b1c4a7294db01bfeba6ad4d1667be9c7c214633570a9f493",
+      "bytes": 1524
+    },
+    {
+      "path": "docs/FreeEQ8_BASE_README.md",
+      "sha256": "0b74b5f485865f1a89461f5218ee301129ff648039fc5e128064e375e7b05f6b",
+      "bytes": 40436
+    },
+    {
+      "path": "docs/PLUGINVAL_AND_DAW_TEST_PLAN.md",
+      "sha256": "3f8e67b3901e860e63ca84117993703a45d87570f1a99ce28493543d1cdb07e1",
+      "bytes": 1301
+    },
+    {
+      "path": "docs/PRODUCTION_AUDIT.md",
+      "sha256": "d5f886c6669f24c1e1a00173488cf634198cc798038a3b0dc6eee5eb3a122bd1",
+      "bytes": 906
+    },
+    {
+      "path": "docs/PRODUCTION_COMPLETION_MAP.md",
+      "sha256": "a58c427a508a6861f5b7c7f6fd56f93510594f2c732748dbfe0ebd1f2fca9e14",
+      "bytes": 739
+    },
+    {
+      "path": "docs/PROTO_SYNTH_VOXEL_INTEGRATION.md",
+      "sha256": "eabdeda1de6edb4868452f152b0e5fe101ba42a1a0adf408591d44faad671a4c",
+      "bytes": 1872
+    },
+    {
+      "path": "docs/RELEASE_CHECKLIST.md",
+      "sha256": "8688e23589da410eaecb0f4a0583ce27ef1c00bfce4042fa07e00c76fca7bb95",
+      "bytes": 1000
+    },
+    {
+      "path": "docs/WORLD_CLASS_SPECTRAL_VOCODER_SPEC.md",
+      "sha256": "8be88cd2c59c088d697b1bd7fc9044650c6a5755662f9e0c0db097e97e94d7af",
+      "bytes": 998
+    },
+    {
+      "path": "package_macos.sh",
+      "sha256": "857524df56fb71e979aecab0b70203decf00c945fd4858f88987dce42d5b05ae",
+      "bytes": 805
+    },
+    {
+      "path": "presets/FreeVox8_factory_presets.json",
+      "sha256": "39f290bcc14a4a5ea7d8e7989f798dfce68f65dd80875e0b027c4eafd9eb112d",
+      "bytes": 5389
+    },
+    {
+      "path": "scripts/certify_local_release.sh",
+      "sha256": "863ad50b34aec5402180d07fd7f2b21324ec8adfd7ae453428bdf9f9e0aa5b81",
+      "bytes": 615
+    },
+    {
+      "path": "scripts/make_evidence_pack.py",
+      "sha256": "e9a756ac8c82e177ee64874259bfa7c0a7efcf2c4dbdc26440dac9e4da540bdf",
+      "bytes": 956
+    },
+    {
+      "path": "scripts/smoke_source.sh",
+      "sha256": "e5e8c7247276ed01f01ba6dbb868aed1644fe4a61020cd0a94636a048e7addd9",
+      "bytes": 146
+    },
+    {
+      "path": "scripts/validate_repo.py",
+      "sha256": "0bf81efb43c6d16ae359fd42ac6473f746c6495df85b59b9bf7a7f61ed2e9571",
+      "bytes": 3878
+    }
+  ]
+}

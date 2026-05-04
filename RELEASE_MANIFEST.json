@@ -1,0 +1,10 @@
+{
+  "product": "FreeVox8",
+  "version": "0.5.0",
+  "vendor": "TizWildinEntertainment",
+  "status": "source-release-candidate",
+  "formats": ["VST3", "AU", "Standalone"],
+  "core": "dual-engine spectral vocoder: Low Latency 128 plus Spectral Ghost 1024 reference backend",
+  "binary_certification": "pending local JUCE build, pluginval strictness 10, and DAW smoke tests",
+  "required_gates": ["validate_repo.py", "cmake configure", "release build", "pluginval strictness 10", "DAW smoke tests", "evidence pack"]
+}

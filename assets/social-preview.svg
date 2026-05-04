@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="FreeVox8 spectral vocoder preview">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#05060d"/>
+      <stop offset="0.55" stop-color="#101022"/>
+      <stop offset="1" stop-color="#21164a"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#665dff"/>
+      <stop offset="1" stop-color="#e8e2ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="640" rx="44" fill="url(#bg)"/>
+  <g opacity="0.22" stroke="#8f86ff" stroke-width="1">
+    <path d="M80 120H1200M80 180H1200M80 240H1200M80 300H1200M80 360H1200M80 420H1200M80 480H1200"/>
+    <path d="M120 80V560M200 80V560M280 80V560M360 80V560M440 80V560M520 80V560M600 80V560M680 80V560M760 80V560M840 80V560M920 80V560M1000 80V560M1080 80V560M1160 80V560"/>
+  </g>
+  <text x="88" y="176" fill="#f2efff" font-size="92" font-family="Arial, Helvetica, sans-serif" font-weight="800">FreeVox8</text>
+  <text x="94" y="232" fill="#bcb4ff" font-size="31" font-family="Arial, Helvetica, sans-serif">Spectral vocoder • ghost resynth • dynamic vocal masking</text>
+  <g transform="translate(88 320)">
+    <rect x="0" y="110" width="42" height="90" rx="10" fill="url(#bar)" opacity="0.76"/>
+    <rect x="58" y="74" width="42" height="126" rx="10" fill="url(#bar)" opacity="0.82"/>
+    <rect x="116" y="36" width="42" height="164" rx="10" fill="url(#bar)" opacity="0.94"/>
+    <rect x="174" y="88" width="42" height="112" rx="10" fill="url(#bar)" opacity="0.78"/>
+    <rect x="232" y="18" width="42" height="182" rx="10" fill="url(#bar)" opacity="0.97"/>
+    <rect x="290" y="52" width="42" height="148" rx="10" fill="url(#bar)" opacity="0.86"/>
+    <rect x="348" y="118" width="42" height="82" rx="10" fill="url(#bar)" opacity="0.70"/>
+    <rect x="406" y="64" width="42" height="136" rx="10" fill="url(#bar)" opacity="0.85"/>
+  </g>
+  <text x="94" y="590" fill="#8f86ff" font-size="22" font-family="Arial, Helvetica, sans-serif">Open-source JUCE VST3/AU/Standalone plugin by TizWildinEntertainment</text>
+</svg>
