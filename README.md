@@ -52,6 +52,8 @@ See `docs/DSP_GOLDEN_TESTS.md`, `docs/PLUGINVAL_AND_DAW_TEST_PLAN.md`, and `docs
 
 ## Positioning
 
+https://ffm.bio/no4km87
+
 > FreeVox8 — spectral vocoder, ghost resynthesis, and dynamic vocal masking.
 
 SEO keywords: free vocoder plugin, spectral vocoder, vocal resynthesis, vocoder VST3, JUCE vocoder plugin, spectral masking plugin, formant shifter plugin, robot voice plugin, ghost vocal effect, open source audio plugin.
