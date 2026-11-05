@@ -218,7 +218,7 @@ frame-assumption.
 | Mode | Processing |
 |------|-----------|
 | Vocoder | Carrier × shifted envelope × consonant lift × band gain |
-| Mask | Dry × (1 − meanEnvelope × maskDepth × (2.6 + quality)) — broadband, see below |
+| Mask | Dry − Σ bandDry × min(0.96, e × maskDepth × 3.2) × maskK — per-band, subtractive (see below) |
 | Ghost | Vocoded × (1 + ghost × 1.95) + dry × ghost × 0.06 |
 | Morph | Two-envelope morph: `e = (1−α)·e₁ + α·e₂` per band (e₁ main input, e₂ sidechain, α = ghost parameter), imposed on one carrier. With no sidechain, e₂ is the frozen snapshot. The old blend formula was removed 2026-11-05 (Step 3). |
 
@@ -229,19 +229,67 @@ intelligible sibilance and breath.
 **Band gain:** `0.038 + 0.040 × (bi/127)` — slight high-frequency emphasis to
 counteract the natural energy rolloff of speech formants.
 
-**Mask is broadband in this engine, not per-band.** The filterbank Mask
-computes one reduction from the *mean* of all 128 shifted envelopes
-(`envelopeSum`, the average envelope across bands) and applies it as a
-single gain to the dry signal: `wet = dry × (1 − reduction) +
-transientReturn`. That is broadband ducking — the whole signal ducks when
-the mean envelope is high — which is exactly the pumping failure mode the
-golden test forbids ("audible spectral pocket without broadband pumping").
-The Spectral Ghost 1024 Mask, by contrast, ducks the carrier *per band*
-(`y = car × (1 − min(0.96, e × maskDepth × 3.2))` per bin, §4.5). The two
-engines therefore implement two different operations under one mode name.
-Making the filterbank Mask per-band (duck each carrier band by its own
-envelope, as Ghost does) is v1.0 work, gated by the pumping test — it is
-not a documentation fix.
+**Mask is per-band in this engine (since 2026-11-05, Step 7).** Each
+band's dry slice is ducked by its own envelope, same shape as the Ghost
+Mask: `reduction = min(0.96, e × maskDepth × 3.2)` per band, where `e` is
+the band's (formant-shifted) modulator envelope. The ducked slices are
+SUBTRACTED from dry (`wet = dry − Σ bandDry × reduction × maskK +
+transientReturn`) instead of summing the kept slices: the filterbank sum
+is not a reconstruction -- its transfer is +11..+19 dB with ±66° phase
+(measured numerically from the real 2nd-order Butterworth coefficients),
+so a summed kept-signal would be loud and ripply at depth 0, while the
+subtractive form is bit-exact dry at depth 0 and never boosts. `maskK`
+is the no-boost bound of the bank's sum transfer `H(f)`: `k ≤
+2·Re(H)/|H|²` at every frequency, solved from the real coefficients in
+`prepare()` (0.9× the minimum over a log probe grid; ~0.088 at 128
+bands / 48 kHz, so the mean full-duck pocket is ~−5 dB with the worst
+frequency at 0 dB). The pocket depth is therefore bounded by the bank's
+sum ripple, not by the depth knob: a deeper pocket needs a
+reconstruction-flat bank (future work). In Mask mode the band loop runs
+on dry, not the internal carrier -- the old broadband Mask never let
+the internal carrier reach the output either, so that contract is
+unchanged (MIDI note is inert in Mask mode, as before). The old
+broadband form (one reduction from the mean envelope applied to the
+whole dry signal -- the pumping failure mode by construction) is gone;
+the pumping test (`Tests/MaskPumping.cpp`) measures the usable depth
+range on a shouted vocal and a drum modulator. The per-band mask
+reduction is exposed to the UI through atomic taps (`getMaskBin()` /
+`getMaskMeanReduction()`, same discipline as the spectrum display) so
+the mode is legible; the UI rendering itself is a later step.
+
+**Pumping test, measured 2026-11-05 (`Tests/MaskPumping.cpp`, VM, 48 kHz,
+saw-chord carrier 110 + 164.81 + 220 Hz, Mask mode, mix 1, air 0,
+transientProtect 0, outputGain −12 dB):** maskK solves to 0.0876
+(predicted ~0.088); depth 0 is bit-exact dry (max|out − tanh(dry·gain)|
+= 0); the display reads the pocket (depth 0.5 shout: near band mean
+0.164 max 0.591, far band mean 0.064 max 0.174; depth 0: 0.0000). The
+pumping metric is the paired 10 ms windowed-RMS ratio against the
+depth-0 render (the carrier's own 10 ms RMS beats by 4.14 dB p-p, so an
+absolute p-p measures the chord, not the Mask; the paired ratio cancels
+it, floor 0 dB by construction). Shouted vocal (CMU ARCTIC bdl
+arctic_a0108, ×3 tanh-clipped, looped): pocket −2.22 / −5.03 / −7.58 /
+−9.73 dB at 120 Hz and −0.34 / −1.75 / −3.66 / −6.13 dB at 500 Hz, far
+band (8000 Hz) 0.03–0.10 dB untouched, pumping 0.96 / 1.94 / 2.91 /
+3.81 dB p-p (old broadband 1.09 / 2.35 / 3.83 / 5.65 dB -- the fix buys
+up to 1.84 dB). The pocket crosses 3 dB at depth ≈0.32, pumping crosses
+the 1 dB bar at depth ≈0.26: **the usable depth range is EMPTY for the
+shouted vocal** -- a near miss, not a blowout. Drum (120 BPM kick
+160→48 Hz + click): the pocket is INVERTED at the kick fundamental
+(+0.29 / +0.56 / +0.80 / +1.03 dB at 60 Hz) and pumping is slightly
+WORSE than broadband at every depth (1.02 / 2.02 / 2.90 / 3.49 dB vs
+0.71 / 1.49 / 2.35 / 3.31 dB) -- when the reduction concentrates in a
+few low bands, the ducked slices are phase-misaligned with the dry sum
+and subtracting them adds energy at those frequencies. The vowel pocket
+test (`Tests/DSPVerify.cpp` testMaskPerBand) agrees: depth 0.8 near
+gain 0.814×, far gain 1.834×, pocket ratio 0.444 (< 0.7, passes) -- the
+far band got louder, the same phase effect. So the per-band Mask is a
+real, selective pocket-carver for broadband modulators (far bands
+untouched where broadband ducked them 2.48 dB at depth 1.0), but it does
+NOT meet the golden test ("audible pocket without broadband pumping",
+1 dB bar) for either test modulator as built: the pocket depth is
+bounded by the bank's sum ripple, and a deeper pocket per unit pumping
+needs a reconstruction-flat bank (future work, §6) or a Mask design
+that does not subtract phase-misaligned slices.
 
 ### 3.6 Formant Shift
 

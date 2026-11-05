@@ -38,6 +38,11 @@ public:
     float getDisplayBin(int index) const noexcept { return dsp.getDisplayBin(index); }
     int getDisplayBinCount() const noexcept { return dsp.getDisplayBinCount(); }
 
+    // Per-band Mask readout for the UI meter (see FreeVox8DSP::getMaskBin).
+    float getMaskBin(int index) const noexcept { return dsp.getMaskBin(index); }
+    int getMaskBinCount() const noexcept { return dsp.getMaskBinCount(); }
+    float getMaskMeanReduction() const noexcept { return dsp.getMaskMeanReduction(); }
+
 private:
     FreeVox8DSP dsp;
 

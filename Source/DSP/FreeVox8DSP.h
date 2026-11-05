@@ -92,6 +92,7 @@ public:
         }
 
         buildFixedBandFilters();
+        maskK = computeMaskK();
         spectral.prepare(sr, maxBlockSize, channels);
         reset();
     }
@@ -113,6 +114,9 @@ public:
         }
 
         for (auto& v : displayBins)
+            v.store(0.0f, std::memory_order_relaxed);
+
+        for (auto& v : maskDisplay)
             v.store(0.0f, std::memory_order_relaxed);
 
         phase.fill(0.0);
@@ -163,6 +167,7 @@ public:
         const float stereoWidth = juce::jlimit(0.0f, 2.0f, params.stereoWidth);
         const float quality = juce::jlimit(0.0f, 1.0f, params.quality);
         const bool freezeOn = params.freeze > 0.5f;
+        const bool isMask = (params.mode == Mode::Mask);
 
         const float attackMs = 0.75f + (1.0f - clarity) * 9.0f;
         const float releaseMs = 22.0f + (1.0f - clarity) * 220.0f;
@@ -182,7 +187,12 @@ public:
             {
                 const float dry = x[n];
                 const float modulator = sc ? sc[n] : dry;
-                const float carrier = makeCarrierSample(midiHz, dry, ch);
+                // Mask mode ducks the dry signal itself, so the band
+                // loop runs on dry, not the internal carrier: the old
+                // broadband Mask never let the internal carrier reach
+                // the output either, and this keeps that contract
+                // (MIDI note is inert in Mask mode, as before).
+                const float carrier = isMask ? dry : makeCarrierSample(midiHz, dry, ch);
                 const float transient = juce::jlimit(0.0f, 1.0f, std::abs(dry - previousInput[static_cast<size_t>(ch)]) * 12.0f);
                 previousInput[static_cast<size_t>(ch)] = dry;
 
@@ -196,6 +206,7 @@ public:
 
                 float vocoded = 0.0f;
                 float envelopeSum = 0.0f;
+                float ducked = 0.0f;
 
                 for (int bi = 0; bi < kNumBands; ++bi)
                 {
@@ -222,41 +233,89 @@ public:
                         effEnv = (1.0f - alpha) * shiftedEnv + alpha * env2;
                     }
                     const float bandCarrier = b.carHighpass[static_cast<size_t>(ch)].processSample(b.carLowpass[static_cast<size_t>(ch)].processSample(carrier));
-                    const float consonantLift = 1.0f + air * highBandWeight(bi) * 1.6f;
-                    const float shaped = bandCarrier * effEnv * consonantLift * (2.15f + clarity * 4.25f);
-                    vocoded += shaped * bandGain(bi);
-                    envelopeSum += effEnv;
-                }
-
-                envelopeSum *= 1.0f / static_cast<float>(kNumBands);
-
-                const float breath = air * whiteNoise() * (0.010f + envelopeSum * 0.085f);
-                const float transientReturn = dry * transientProtect * transient * 0.12f;
-                vocoded = vocoded * drive + breath + transientReturn;
-
-                float wet = vocoded;
-                switch (params.mode)
-                {
-                    case Mode::Vocoder:
-                        break;
-
-                    case Mode::Mask:
+                    // Mask mode: per-band ducking, same shape as the
+                    // Ghost Mask (reduction = min(0.96, e * depth * 3.2)
+                    // per band). The ducked slices are SUBTRACTED from
+                    // dry instead of summing the kept slices: the
+                    // filterbank sum is not a reconstruction (its
+                    // transfer is +11..+19 dB with +/-66 deg phase, so
+                    // a summed kept-signal would be loud and ripply at
+                    // depth 0), while the subtractive form is bit-exact
+                    // dry at depth 0 and never boosts: maskK is the
+                    // no-boost bound of the bank's sum transfer, solved
+                    // from the real coefficients in prepare() (0.9x the
+                    // minimum over frequency of 2*Re(H)/|H|^2). No
+                    // bandGain here: that is the vocoder's emphasis
+                    // curve, and applying it to the subtraction would
+                    // over-remove highs and under-remove lows.
+                    const float reduction = isMask
+                        ? juce::jlimit(0.0f, 0.96f, effEnv * maskDepth * 3.2f)
+                        : 0.0f;
+                    if (isMask)
                     {
-                        const float reduction = juce::jlimit(0.0f, 0.97f, envelopeSum * maskDepth * (2.6f + quality));
-                        wet = dry * (1.0f - reduction) + transientReturn;
-                        break;
+                        ducked += bandCarrier * reduction * maskK;
+                    }
+                    else
+                    {
+                        const float consonantLift = 1.0f + air * highBandWeight(bi) * 1.6f;
+                        const float shaped = bandCarrier * effEnv * consonantLift * (2.15f + clarity * 4.25f);
+                        vocoded += shaped * bandGain(bi);
+                        envelopeSum += effEnv;
                     }
 
-                    case Mode::Ghost:
-                        wet = vocoded * (1.0f + ghost * 1.95f) + dry * ghost * 0.06f;
-                        break;
+                    // Per-band mask readout for the UI meter: the
+                    // reduction actually applied in this band (channel
+                    // 0 is the representative tap), smoothed like the
+                    // spectrum display. In every other mode the target
+                    // is 0, so the meter decays to empty instead of
+                    // showing stale Mask data.
+                    if (ch == 0)
+                    {
+                        const float previous = maskDisplay[static_cast<size_t>(bi)].load(std::memory_order_relaxed);
+                        maskDisplay[static_cast<size_t>(bi)].store(previous * 0.86f + reduction * 0.14f,
+                                                                   std::memory_order_relaxed);
+                    }
+                }
 
-                    // Morph: no separate formula -- the morph already
-                    // happened in the envelope (two-envelope interpolation
-                    // above), so mode 3 is the vocoded signal. The old
-                    // blend formula is gone; see the band loop.
-                    case Mode::Morph:
-                        break;
+                const float transientReturn = dry * transientProtect * transient * 0.12f;
+
+                float wet = 0.0f;
+                if (isMask)
+                {
+                    // Per-band Mask: dry minus the ducked slices.
+                    // Depth 0 is bit-exact dry (ducked sums to zero);
+                    // the pocket lives in the ducked sum, not in a
+                    // broadband gain, so a loud band cannot duck the
+                    // whole carrier.
+                    wet = dry - ducked + transientReturn;
+                }
+                else
+                {
+                    envelopeSum *= 1.0f / static_cast<float>(kNumBands);
+
+                    const float breath = air * whiteNoise() * (0.010f + envelopeSum * 0.085f);
+                    vocoded = vocoded * drive + breath + transientReturn;
+
+                    wet = vocoded;
+                    switch (params.mode)
+                    {
+                        case Mode::Vocoder:
+                            break;
+
+                        case Mode::Ghost:
+                            wet = vocoded * (1.0f + ghost * 1.95f) + dry * ghost * 0.06f;
+                            break;
+
+                        // Morph: no separate formula -- the morph already
+                        // happened in the envelope (two-envelope interpolation
+                        // above), so mode 3 is the vocoded signal. The old
+                        // blend formula is gone; see the band loop.
+                        case Mode::Morph:
+                            break;
+
+                        case Mode::Mask:
+                            break; // handled above, not a broadband gain
+                    }
                 }
 
                 x[n] = fastSaturate((dry * dryMix + wet * wetMix) * outGain);
@@ -275,6 +334,38 @@ public:
     }
 
     int getDisplayBinCount() const noexcept { return kNumBands; }
+
+    // Per-band Mask readout for the UI meter: the reduction actually
+    // applied in each band (0..0.96), same atomic-tap discipline as
+    // getDisplayBin (audio thread writes, UI timer reads). Routes to
+    // the Spectral Ghost engine when it is the active engine, exactly
+    // like getDisplayBin. The UI rendering is a later step; this is
+    // the data it reads.
+    float getMaskBin(int index) const noexcept
+    {
+        index = juce::jlimit(0, kNumBands - 1, index);
+        if (lastSpectralEngine.load(std::memory_order_relaxed))
+            return spectral.getMaskBin(index);
+        return maskDisplay[static_cast<size_t>(index)].load(std::memory_order_relaxed);
+    }
+
+    int getMaskBinCount() const noexcept { return kNumBands; }
+
+    // Mean applied reduction across bands (0..0.96): the single number
+    // a Mask meter needs next to the per-band array.
+    float getMaskMeanReduction() const noexcept
+    {
+        if (lastSpectralEngine.load(std::memory_order_relaxed))
+            return spectral.getMaskMeanReduction();
+        float sum = 0.0f;
+        for (const auto& v : maskDisplay)
+            sum += v.load(std::memory_order_relaxed);
+        return sum / static_cast<float>(kNumBands);
+    }
+
+    // Subtractive-Mask calibration, solved from the real filter
+    // coefficients in prepare(). ~0.088 at 128 bands / 48 kHz.
+    float getMaskK() const noexcept { return maskK; }
 
     // Effective per-band envelope actually imposed on the carrier, for
     // measurement and UI readout. In Morph mode this is the interpolated
@@ -320,10 +411,20 @@ private:
 
     std::array<Band, kNumBands> bands;
     std::array<std::atomic<float>, kNumBands> displayBins {};
+    // Per-band Mask readout for the UI meter: the reduction actually
+    // applied in each band (0..0.96), written by the audio thread in
+    // Mask mode, decayed to 0 in every other mode. Same atomic-tap
+    // discipline as displayBins: audio thread writes, UI timer reads,
+    // no locks. See getMaskBin().
+    std::array<std::atomic<float>, kNumBands> maskDisplay {};
     FreeVox8SpectralEngine spectral;
     std::atomic<bool> lastSpectralEngine { false };
     Parameters params;
     double sr = 44100.0;
+    // Subtractive-Mask calibration, solved from the real filter
+    // coefficients in prepare() (see computeMaskK). Default is the
+    // 128-band ballpark until prepare() runs.
+    float maskK = 0.09f;
     int channels = kMaxChannels;
     int currentMidiNote = 48;
     std::array<double, kMaxChannels> phase { 0.0, 0.0 };
@@ -349,6 +450,58 @@ private:
                 *bands[static_cast<size_t>(i)].mod2Lowpass[static_cast<size_t>(ch)].coefficients  = *lp;
             }
         }
+    }
+
+    // Solve the subtractive Mask's calibration from the real carrier
+    // filter coefficients: H(f) is the complex sum of all bandpass
+    // responses. Subtracting k * (sum of ducked slices) from dry gives
+    // wet(f) = (1 - k*H(f)) * dry(f) at full duck, so k must satisfy
+    // |1 - k*H(f)| <= 1 at every frequency or the Mask boosts where it
+    // should cut. That bound is k <= 2*Re(H)/|H|^2 wherever Re(H) > 0;
+    // this returns 0.9x its minimum over a log probe grid (measured
+    // 0.097 at 128 bands / 48 kHz, i.e. maskK ~0.088; the mean full-duck
+    // pocket there is ~-5 dB with the worst frequency at 0 dB -- the
+    // pocket depth is bounded by the bank's sum ripple, not by the
+    // depth knob: a deeper pocket needs a reconstruction-flat bank).
+    // Runs in prepare() only, never in process(). Uses JUCE's own
+    // magnitude/phase response, so it tracks the real coefficients
+    // at any sample rate or band count.
+    float computeMaskK()
+    {
+        const int probes = 256;
+        float kMax = 1.0f;
+        bool any = false;
+        for (int m = 0; m < probes; ++m)
+        {
+            const double t = static_cast<double>(m) / static_cast<double>(probes - 1);
+            const double freq = 60.0 * std::pow(17000.0 / 60.0, t);
+            double re = 0.0, im = 0.0;
+            for (int i = 0; i < kNumBands; ++i)
+            {
+                const auto& b = bands[static_cast<size_t>(i)];
+                const auto* hp = b.carHighpass[0].coefficients.get();
+                const auto* lp = b.carLowpass[0].coefficients.get();
+                const double mag = hp->getMagnitudeForFrequency(freq, sr)
+                                 * lp->getMagnitudeForFrequency(freq, sr);
+                const double ph = hp->getPhaseForFrequency(freq, sr)
+                                + lp->getPhaseForFrequency(freq, sr);
+                re += mag * std::cos(ph);
+                im += mag * std::sin(ph);
+            }
+            const double mag2 = re * re + im * im;
+            if (mag2 > 1e-12 && re > 0.0)
+            {
+                const float bound = static_cast<float>(2.0 * re / mag2);
+                if (! any || bound < kMax)
+                {
+                    kMax = bound;
+                    any = true;
+                }
+            }
+        }
+        if (! any)
+            return 0.09f;
+        return juce::jlimit(0.01f, 1.0f, 0.9f * kMax);
     }
 
     static float makeBandEdge(int index, float nyquistSafe) noexcept
