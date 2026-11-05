@@ -31,6 +31,11 @@ public:
         Vocoder = 0,
         Mask = 1,
         Ghost = 2,
+        // Morph = two-envelope morph in this (Low Latency 128) engine:
+        // e = (1-alpha)*e1 + alpha*e2 per band, imposed on one carrier,
+        // alpha = Ghost parameter (0 = main input, 1 = sidechain). The
+        // Spectral Ghost 1024 engine's mode 3 is still the old blend
+        // until the spectral morph lands there.
         Morph = 3
     };
 
@@ -69,8 +74,12 @@ public:
             for (auto& f : b.modHighpass)   f.prepare(spec);
             for (auto& f : b.carLowpass)    f.prepare(spec);
             for (auto& f : b.carHighpass)   f.prepare(spec);
+            for (auto& f : b.mod2Lowpass)   f.prepare(spec);
+            for (auto& f : b.mod2Highpass)  f.prepare(spec);
             b.env.fill(0.0f);
             b.frozenEnv.fill(0.0f);
+            b.env2.fill(0.0f);
+            b.frozenEnv2.fill(0.0f);
         }
 
         buildFixedBandFilters();
@@ -86,8 +95,12 @@ public:
             for (auto& f : b.modHighpass)   f.reset();
             for (auto& f : b.carLowpass)    f.reset();
             for (auto& f : b.carHighpass)   f.reset();
+            for (auto& f : b.mod2Lowpass)   f.reset();
+            for (auto& f : b.mod2Highpass)  f.reset();
             b.env.fill(0.0f);
             b.frozenEnv.fill(0.0f);
+            b.env2.fill(0.0f);
+            b.frozenEnv2.fill(0.0f);
         }
 
         for (auto& v : displayBins)
@@ -164,7 +177,13 @@ public:
                 const float transient = juce::jlimit(0.0f, 1.0f, std::abs(dry - previousInput[static_cast<size_t>(ch)]) * 12.0f);
                 previousInput[static_cast<size_t>(ch)] = dry;
 
-                analyseEnvelopeSample(ch, modulator, attackCoeff, releaseCoeff, freezeOn);
+                // Morph mode runs TWO modulator envelopes: e1 from the main
+                // input, e2 from the sidechain. Every other mode analyses
+                // the single modulator (sidechain if connected, else dry).
+                if (params.mode == Mode::Morph && sc != nullptr)
+                    analyseEnvelopeSample(ch, dry, sc[n], true, attackCoeff, releaseCoeff, freezeOn);
+                else
+                    analyseEnvelopeSample(ch, modulator, 0.0f, false, attackCoeff, releaseCoeff, freezeOn);
 
                 float vocoded = 0.0f;
                 float envelopeSum = 0.0f;
@@ -173,11 +192,31 @@ public:
                 {
                     auto& b = bands[static_cast<size_t>(bi)];
                     const float shiftedEnv = readShiftedEnvelope(ch, static_cast<float>(bi) - formantBins, freezeOn);
+                    // Two-envelope morph: interpolate the envelopes per
+                    // band, e = (1-alpha)*e1 + alpha*e2, and impose the
+                    // result on the one carrier. Alpha is the Ghost
+                    // parameter in Morph mode (0 = main input, 1 =
+                    // sidechain). With no sidechain connected, e2 is the
+                    // frozen snapshot -- live-vs-frozen morph when freeze
+                    // is held, and (the frozen copy tracks the live
+                    // envelope with a ~28 ms lag) effectively the vocoder
+                    // when freeze is off. This replaces the old mode-3
+                    // blend (0.58*vocoded + 0.42*tanh(dry + ...)), which
+                    // mixed waveforms rather than interpolating spectra.
+                    float effEnv = shiftedEnv;
+                    if (params.mode == Mode::Morph)
+                    {
+                        const float alpha = juce::jlimit(0.0f, 1.0f, ghost);
+                        const float env2 = (sc != nullptr)
+                            ? readShiftedEnvelope2(ch, static_cast<float>(bi) - formantBins, freezeOn)
+                            : readShiftedEnvelope(ch, static_cast<float>(bi) - formantBins, true);
+                        effEnv = (1.0f - alpha) * shiftedEnv + alpha * env2;
+                    }
                     const float bandCarrier = b.carHighpass[static_cast<size_t>(ch)].processSample(b.carLowpass[static_cast<size_t>(ch)].processSample(carrier));
                     const float consonantLift = 1.0f + air * highBandWeight(bi) * 1.6f;
-                    const float shaped = bandCarrier * shiftedEnv * consonantLift * (2.15f + clarity * 4.25f);
+                    const float shaped = bandCarrier * effEnv * consonantLift * (2.15f + clarity * 4.25f);
                     vocoded += shaped * bandGain(bi);
-                    envelopeSum += shiftedEnv;
+                    envelopeSum += effEnv;
                 }
 
                 envelopeSum *= 1.0f / static_cast<float>(kNumBands);
@@ -203,8 +242,11 @@ public:
                         wet = vocoded * (1.0f + ghost * 1.95f) + dry * ghost * 0.06f;
                         break;
 
+                    // Morph: no separate formula -- the morph already
+                    // happened in the envelope (two-envelope interpolation
+                    // above), so mode 3 is the vocoded signal. The old
+                    // blend formula is gone; see the band loop.
                     case Mode::Morph:
-                        wet = 0.58f * vocoded + 0.42f * fastSaturate(dry + vocoded * (0.28f + ghost * 0.92f));
                         break;
                 }
 
@@ -225,6 +267,23 @@ public:
 
     int getDisplayBinCount() const noexcept { return kNumBands; }
 
+    // Effective per-band envelope actually imposed on the carrier, for
+    // measurement and UI readout. In Morph mode this is the interpolated
+    // (1-alpha)*e1 + alpha*e2 mix; in every other mode it is the single
+    // modulator envelope. Read-only: it does not change DSP state.
+    float getEffectiveEnvelope(int band, int channel = 0) const noexcept
+    {
+        const int bi = juce::jlimit(0, kNumBands - 1, band);
+        const int ch = juce::jlimit(0, kMaxChannels - 1, channel);
+        const auto& b = bands[static_cast<size_t>(bi)];
+        const float e1 = b.env[static_cast<size_t>(ch)];
+        if (params.mode != Mode::Morph)
+            return e1;
+        const float alpha = juce::jlimit(0.0f, 1.0f, params.ghost);
+        return (1.0f - alpha) * e1 + alpha * b.env2[static_cast<size_t>(ch)];
+    }
+
+
 private:
     struct Band
     {
@@ -237,8 +296,17 @@ private:
         std::array<juce::dsp::IIR::Filter<float>, kMaxChannels> modHighpass;
         std::array<juce::dsp::IIR::Filter<float>, kMaxChannels> carLowpass;
         std::array<juce::dsp::IIR::Filter<float>, kMaxChannels> carHighpass;
+        // Second modulator filterbank, for Morph mode only: the sidechain
+        // needs its own filter states (running the same filter object on
+        // two signals per sample would mix their states). A further 256
+        // instances per channel, built once in prepare(), run only when
+        // Morph mode has a sidechain connected.
+        std::array<juce::dsp::IIR::Filter<float>, kMaxChannels> mod2Lowpass;
+        std::array<juce::dsp::IIR::Filter<float>, kMaxChannels> mod2Highpass;
         std::array<float, kMaxChannels> env {};
         std::array<float, kMaxChannels> frozenEnv {};
+        std::array<float, kMaxChannels> env2 {};
+        std::array<float, kMaxChannels> frozenEnv2 {};
     };
 
     std::array<Band, kNumBands> bands;
@@ -268,6 +336,8 @@ private:
                 *bands[static_cast<size_t>(i)].carHighpass[static_cast<size_t>(ch)].coefficients = *hp;
                 *bands[static_cast<size_t>(i)].modLowpass[static_cast<size_t>(ch)].coefficients  = *lp;
                 *bands[static_cast<size_t>(i)].carLowpass[static_cast<size_t>(ch)].coefficients  = *lp;
+                *bands[static_cast<size_t>(i)].mod2Highpass[static_cast<size_t>(ch)].coefficients = *hp;
+                *bands[static_cast<size_t>(i)].mod2Lowpass[static_cast<size_t>(ch)].coefficients  = *lp;
             }
         }
     }
@@ -282,6 +352,8 @@ private:
 
     void analyseEnvelopeSample(int ch,
                                float modulator,
+                               float modulator2,
+                               bool hasModulator2,
                                float attackCoeff,
                                float releaseCoeff,
                                bool freezeOn)
@@ -297,6 +369,18 @@ private:
 
             if (! freezeOn)
                 b.frozenEnv[static_cast<size_t>(ch)] = 0.9992f * b.frozenEnv[static_cast<size_t>(ch)] + 0.0008f * env;
+
+            if (hasModulator2)
+            {
+                const float bandMod2 = b.mod2Highpass[static_cast<size_t>(ch)].processSample(b.mod2Lowpass[static_cast<size_t>(ch)].processSample(modulator2));
+                const float mag2 = std::sqrt(bandMod2 * bandMod2 + 1.0e-12f);
+                auto& env2 = b.env2[static_cast<size_t>(ch)];
+                env2 = (mag2 > env2) ? attackCoeff * env2 + (1.0f - attackCoeff) * mag2
+                                     : releaseCoeff * env2 + (1.0f - releaseCoeff) * mag2;
+
+                if (! freezeOn)
+                    b.frozenEnv2[static_cast<size_t>(ch)] = 0.9992f * b.frozenEnv2[static_cast<size_t>(ch)] + 0.0008f * env2;
+            }
 
             const float visible = freezeOn ? b.frozenEnv[static_cast<size_t>(ch)] : env;
             const float previous = displayBins[static_cast<size_t>(bi)].load(std::memory_order_relaxed);
@@ -315,6 +399,20 @@ private:
         {
             const auto& b = bands[static_cast<size_t>(idx)];
             return freezeOn ? b.frozenEnv[static_cast<size_t>(ch)] : b.env[static_cast<size_t>(ch)];
+        };
+        return read(lo) + (read(hi) - read(lo)) * t;
+    }
+
+    float readShiftedEnvelope2(int ch, float bandPosition, bool freezeOn) const noexcept
+    {
+        const float clamped = juce::jlimit(0.0f, static_cast<float>(kNumBands - 1), bandPosition);
+        const int lo = static_cast<int>(std::floor(clamped));
+        const int hi = juce::jmin(kNumBands - 1, lo + 1);
+        const float t = clamped - static_cast<float>(lo);
+        const auto read = [this, ch, freezeOn](int idx) noexcept -> float
+        {
+            const auto& b = bands[static_cast<size_t>(idx)];
+            return freezeOn ? b.frozenEnv2[static_cast<size_t>(ch)] : b.env2[static_cast<size_t>(ch)];
         };
         return read(lo) + (read(hi) - read(lo)) * t;
     }

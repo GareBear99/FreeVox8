@@ -204,7 +204,7 @@ frame-assumption.
 | Vocoder | Carrier × shifted envelope × consonant lift × band gain |
 | Mask | Dry × (1 − meanEnvelope × maskDepth × (2.6 + quality)) — broadband, see below |
 | Ghost | Vocoded × (1 + ghost × 1.95) + dry × ghost × 0.06 |
-| Morph | 0.58 × vocoded + 0.42 × tanh(dry + vocoded × (0.28 + ghost × 0.92)) |
+| Morph | Two-envelope morph: `e = (1−α)·e₁ + α·e₂` per band (e₁ main input, e₂ sidechain, α = ghost parameter), imposed on one carrier. With no sidechain, e₂ is the frozen snapshot. The old blend formula was removed 2026-11-05 (Step 3). |
 
 **Consonant lift:** `(1 + air × highBandWeight(bi) × 1.6)` where
 `highBandWeight(i) = (i/127)²` — quadratic rolloff boosting high bands for
@@ -375,9 +375,29 @@ carrier at 0.72 gain even with a zero envelope (`y = car × (0.72 + e ×
 ...)`), so silence in produces a carrier drone out: measured max|out| =
 0.083 (−21.6 dBFS) with silence in, mix = 1, air = 0
 (`Tests/DSPVerify.cpp`). That fails the golden test "silence in → silence
-out". The fix is to remove the 0.72 floor (and recalibrate the level) or
+out. The fix is to remove the 0.72 floor (and recalibrate the level) or
 gate it on the envelope — a v1.0 decision, because it changes Ghost's
 level structure, not a silent edit.
+
+**Known gap — resynthesis does not follow the modulator (verified
+2026-11-05, `Tests/DSPVerify.cpp` testGhostResynthesis, report-only
+until the redesign lands).** The resynthesis sweeps one band's envelope
+across each frame (`e = readEnv(env[ch], frozen[ch], t*(kDisplayBins-1)
+- shift, fr)`), so the output does not follow the modulator; analysis is
+healthy, resynthesis is broken. Measured in this engine (filterbank
+controls in parentheses): formant-shift output centroid −12/0/+12 st =
+253/254/253 Hz, static (filterbank 331/410/520 Hz, moves); burst transfer
+envelope ratio 5.63× vs output ratio 2.20×, needs >5× (filterbank control
+5.66×, passes); Ghost morph spectral balance moves 3.07 dB, needs >6 dB;
+Ghost Mask depth 0.8 pocket ratio 1.369, needs <0.7 (the near band got
+louder, 1.533× — AM sidebands from the envelope sweep, not the envelope).
+Track B (iPlug2) confirmed the same finding independently (burst 41.5×
+vs 1.32×; centroid 1144/1144/1142 Hz; Mask 0.993×/0.993×). **Do not ship
+the Ghost engine as a vocoder on this resynthesis.** The redesign
+decision (FFT cross-synthesis vs per-band carrier filtering vs park Ghost
+as analysis-only) is owed — see §6.6. The Ghost engine's mode 3 (Morph)
+still uses the old blend formula and cannot work as a morph on this
+resynthesis.
 
 ### 4.5 Carrier and Formant Scale (Ghost Engine)
 
@@ -565,6 +585,23 @@ resynthesis. Same `#if PROVOX8` compile-time pattern as FreeEQ8/ProEQ8 [1].
 Per-bin FFT threshold clamping (Soothe2-style transient spectral limiting) using
 the existing OLA infrastructure. Logically adjacent to the Mask mode already
 implemented.
+
+### 6.6 Ghost Resynthesis Redesign (decision owed)
+
+The Ghost engine's OLA resynthesis is broken (§4.4): it sweeps one band's
+envelope across each frame, so the output does not follow the modulator.
+Three options, in order of increasing scope: (1) **per-band carrier
+filtering** — the smallest correct fix, reusing the filterbank machinery
+(one carrier filtered per band, imposed with that band's envelope);
+(2) **FFT cross-synthesis** — the fuller Ghost-backend answer, and the
+direction §6.2 already points (a real STFT resynthesis with the
+modulator's spectrum imposed on the carrier); (3) **park Ghost as
+analysis-only** — keep the backend for freeze/morph analysis and ship
+only the filterbank as the vocoder. The decision is Gary's; it changes
+the §6 order and the CPU story, and Track B will not start the redesign
+until it lands. Until then the Ghost resynthesis checks in
+`Tests/DSPVerify.cpp` are report-only, not asserting, and the Ghost
+engine must not ship as a vocoder.
 
 ---
 

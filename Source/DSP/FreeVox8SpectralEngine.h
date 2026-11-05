@@ -7,6 +7,15 @@
 
 // Spectral Ghost 1024: high-resolution STFT/OLA reference backend.
 // Prepared storage only; process() does no allocation, file I/O, locks, or threads.
+// NOTE (2026-11-05, Track B finding, confirmed Track A): mode 3 (Morph) in
+// this backend is still the old blend (vocoded mixed with raw carrier), not
+// the two-envelope morph -- the true morph lives in the Low Latency 128
+// engine (FreeVox8DSP.h) until the spectral morph lands here. More
+// seriously, renderFrame() sweeps one band's envelope across each frame
+// (e = readEnv(t*127 - shift)), so the output does not follow the
+// modulator; the Ghost resynthesis is under verification (see
+// Tests/DSPVerify.cpp testGhostResynthesis) and must not be shipped as a
+// vocoder on this resynthesis until the redesign decision lands.
 class FreeVox8SpectralEngine
 {
 public:
