@@ -905,6 +905,66 @@ void testGhostResynthesis()
     }
 }
 
+// ---------------------------------------------------------- Filterbank Mask
+// Per-band Mask (Step 7): the filterbank Mask must carve a pocket --
+// near (730 Hz, strong envelope) ducks, far (5000 Hz, weak) does not --
+// and the per-band mask display must read it. Same pocket-ratio
+// criterion as the Ghost mask test above (< 0.7), same helper.
+void testMaskPerBand()
+{
+    // 1. Pocket: near vs far gain at depth 0.8 vs 0.
+    {
+        auto maskGain = [](float depth, float probeHz) {
+            const std::vector<float> on = runGhostVowel(0.0f, 0, 0,
+                                                        FreeVox8DSP::Mode::Mask, 0.0f, depth, false);
+            const std::vector<float> off = runGhostVowel(0.0f, 0, 0,
+                                                         FreeVox8DSP::Mode::Mask, 0.0f, 0.0f, false);
+            const std::vector<float> tailOn(on.end() - 22050, on.end());
+            const std::vector<float> tailOff(off.end() - 22050, off.end());
+            const double dOn = morphBandDb(tailOn, morphBandFreq(morphBandNear(probeHz)), 44100.0);
+            const double dOff = morphBandDb(tailOff, morphBandFreq(morphBandNear(probeHz)), 44100.0);
+            return std::pow(10.0, (dOn - dOff) / 20.0);
+        };
+        const double nearGain = maskGain(0.8f, 730.0f);
+        const double farGain = maskGain(0.8f, 5000.0f);
+        std::printf("  filterbank mask: depth 0.8 gain near (730 Hz) = %.3fx, far (5000 Hz) = %.3fx, pocket ratio = %.3f (working: < 0.7)\n",
+                    nearGain, farGain, nearGain / std::max(farGain, 1e-9));
+        check(nearGain / std::max(farGain, 1e-9) < 0.7, "filterbank mask pocket (near ducks, far does not)");
+    }
+    // 2. Mask display: the per-band readout follows the pocket.
+    {
+        auto maskReadout = [](float depth) {
+            FreeVox8DSP dsp;
+            dsp.prepare(44100.0, 512, 2);
+            auto p = baseParams();
+            p.engineMode = 0;
+            p.mode = FreeVox8DSP::Mode::Mask;
+            p.mix = 1.0f;
+            p.maskDepth = depth;
+            p.air = 0.0f;
+            p.transientProtect = 0.0f;
+            dsp.setParameters(p);
+            juce::AudioBuffer<float> buf(2, 512);
+            juce::MidiBuffer midi;
+            for (int start = 0; start < 88200; start += 512)
+            {
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int n = 0; n < 512; ++n)
+                        buf.getWritePointer(ch)[n] = morphVowel((start + n) / 44100.0, 220.0, 0);
+                dsp.process(buf, nullptr, midi);
+            }
+            return std::make_pair(dsp.getMaskBin(morphBandNear(730.0f)),
+                                  dsp.getMaskBin(morphBandNear(5000.0f)));
+        };
+        const auto on = maskReadout(0.5f);
+        const auto off = maskReadout(0.0f);
+        std::printf("  filterbank mask display: depth 0.5 near %.3f far %.3f; depth 0 near %.4f far %.4f\n",
+                    on.first, on.second, off.first, off.second);
+        check(on.first > 0.05f && on.first > on.second, "mask display: near band reads above far band");
+        check(off.first < 0.01f && off.second < 0.01f, "mask display: ~0 at depth 0");
+    }
+}
+
 // ---------------------------------------------------------- Freeze toggle
 void testFreezeToggle()
 {
@@ -957,6 +1017,7 @@ int main()
     testFreezeToggle();
     testMorph();
     testGhostResynthesis();
+    testMaskPerBand();
     testCpu();
     std::printf(g_failures == 0 ? "ALL CHECKS PASSED\n" : "%d CHECK(S) FAILED\n", g_failures);
     return g_failures == 0 ? 0 : 1;
