@@ -312,10 +312,20 @@ amount in each engine. Neither scale matches the band layout: 128 log-spaced
 bands over 55 Hz–18,500 Hz span log₂(18500/55) ≈ 8.39 octaves, i.e. ≈15.25
 bands per octave, so a +12 semitone setting moves the formants only ≈+6.3
 semitones in the filterbank and ≈+7.9 semitones in Ghost. Both engines
-under-shift relative to the labelled value. This paper states one number per
+under-shift relative to the labelled value. **Measured 2026-11-05
+(`Tests/ArtefactTaxonomy.cpp`, single-formant probes, shifted-envelope
+readout via the new `getShiftedEnvelope()` accessor): +12 st moves the
+formant +6.3 st (730 Hz probe) / +5.6 st (2290 Hz probe); −12 st moves it
+−5.6 st on both probes; the 2290/730 ratio is preserved (3.14 → 3.00 at
++12, 3.14 at −12), so vowel identity holds — the remap moves formants
+without moving pitch, as designed.** This paper states one number per
 engine as shipped; unifying both engines at the geometric ≈15.25
 bins/octave is a v1.0 decision (it changes the audible shift depth of existing
-presets), not a silent edit.
+presets), not a silent edit. (Method note: the formant must be read from
+the shifted envelope, not the output spectrum — a single output frequency
+is dominated by carrier-harmonic skirt leakage, and an output-spectrum
+readout returned the same carrier harmonic, 1175 Hz, for every probe and
+shift.)
 
 ### 3.7 Transient Protect — Traced Mechanism
 
@@ -351,6 +361,54 @@ no-op in the Ghost engine. That is fixed in this revision: the Ghost engine
 now applies the same first-difference gate and dry-transient return per
 sample in `process()`, before the wet/dry mix, so the control works in both
 engines and the transient passes through un-smeared by the OLA path.
+
+**Measured 2026-11-05 (`Tests/ArtefactTaxonomy.cpp`):** drum modulator
+(120 BPM kick + click), onset rise time 10–90% — dry 0.0 ms, filterbank
+13.0 ms at clarity 0.55, 6.0 ms at clarity 1.0, Ghost 23.9 ms
+(report-only: the Ghost frame delay dominates, and clarity does not
+change it — the Ghost envelope follower has fixed attack); pre-echo
+(raw-waveform energy 20 ms before vs after the onset) — dry −204.8 dB,
+filterbank −27.8 dB at clarity 0.55, −87.9 dB at clarity 1.0, Ghost
+≈0.0 dB (the carrier-bleed floor, not pre-echo — the Ghost output is
+never silent); doubling — the dry drum itself scores a median 1 on the
+detector (its own low-frequency ripple), the vocoder introduces none
+above that floor (median 0 both engines). Plosives smear far more than
+kicks: a /t/ burst loses 25.1 dB burst-to-vowel ratio at clarity 0.55
+(17.5 dB at clarity 1.0) — the envelope followers, not the gate, set
+the plosive audibility.
+
+### 3.8 Artefact Taxonomy — Objective Measurements (2026-11-05)
+
+One named objective test per artefact (`Tests/ArtefactTaxonomy.cpp`,
+VM, 44.1 kHz; the subjective halves need human ears — listening
+materials in `~/workspace/vox8-bench/listening/`, see the workspace
+paper §7):
+
+- **Phasiness** — 4 s frozen hold, /a/ F0 220. Filterbank: spectral
+  centroid 429 ± 1 Hz (static) / 287 ± 1 Hz (vibrato), frame-to-frame
+  spectral flux 0.030 / 0.028 per frame, RMS drift +0.72 / +0.43 dB —
+  the hold is spectrally still. Ghost: flux 0.090 / 0.119 per frame
+  (3–4× the filterbank), centroid std ±10 / ±17 Hz — report-only, the
+  wander is the envelope sweep, not a working vocoder's phasiness.
+  The frozen vibrato vowel's spectrum differs from the frozen static
+  vowel's (centroid 287 vs 429 Hz): the freeze captures the leaky
+  average over vibrato cycles, not one instantaneous spectrum.
+- **Musical noise** — Mask mode on sparse material (200 ms /a/
+  bursts every 800 ms ducking a saw chord). Per-band reduction
+  flicker in quiet passages: std 0.0033 at depth 0.8 (0.0012 at 0.3,
+  0.0000 at 0) on the 0–0.96 scale; output spectral flicker equals
+  the depth-0 floor (3.45 dB) at every depth — the Mask adds no
+  measurable flicker above the chord's own variation.
+- **Consonant loss** — synthetic fricatives through the vocoder.
+  /s/ loses 14.4 dB (2–4 kHz) / 20.0 dB (4–8 kHz) at Air 0,
+  improving to 8.8 / 13.5 dB at Air 1.0; /f/ 15.7 / 18.8 → 10.7 /
+  12.8 dB; /sh/ 16.7 / 19.5 → 11.4 / 13.3 dB. Air recovers ~5–6 dB
+  but a 9–14 dB loss remains even at Air 1.0 — the STOI per-band
+  scores say the same thing (2400 Hz 0.430, 3024 Hz 0.495).
+- **Freeze blur / wobble** — not re-run: pilot + Bench cross-check
+  (correction gain 0.03 dB, smear 4.8–6.2 dB), §5.
+- **Pumping** — not re-run: Step 7 (`Tests/MaskPumping.cpp`),
+  usable depth range EMPTY at the 1 dB bar, §3.5.
 
 ---
 
@@ -448,20 +506,33 @@ level structure, not a silent edit.
 until the redesign lands).** The resynthesis sweeps one band's envelope
 across each frame (`e = readEnv(env[ch], frozen[ch], t*(kDisplayBins-1)
 - shift, fr)`), so the output does not follow the modulator; analysis is
-healthy, resynthesis is broken. Measured in this engine (filterbank
-controls in parentheses): formant-shift output centroid −12/0/+12 st =
-253/254/253 Hz, static (filterbank 331/410/520 Hz, moves); burst transfer
-envelope ratio 5.63× vs output ratio 2.20×, needs >5× (filterbank control
-5.66×, passes); Ghost morph spectral balance moves 3.07 dB, needs >6 dB;
-Ghost Mask depth 0.8 pocket ratio 1.369, needs <0.7 (the near band got
-louder, 1.533× — AM sidebands from the envelope sweep, not the envelope).
-Track B (iPlug2) confirmed the same finding independently (burst 41.5×
-vs 1.32×; centroid 1144/1144/1142 Hz; Mask 0.993×/0.993×). **Do not ship
-the Ghost engine as a vocoder on this resynthesis.** The redesign
-decision (FFT cross-synthesis vs per-band carrier filtering vs park Ghost
-as analysis-only) is owed — see §6.6. The Ghost engine's mode 3 (Morph)
-still uses the old blend formula and cannot work as a morph on this
-resynthesis.
+healthy, resynthesis is broken. Measured in this engine at HEAD
+`1ab2608`, 2026-11-05 (filterbank controls in parentheses): formant-shift
+output centroid −12/0/+12 st = 392/390/387 Hz, static (filterbank
+169/250/573 Hz, moves); burst transfer envelope ratio 4.70× vs output
+ratio 1.01×, needs >5× (filterbank control 4.00× — below the 5× bar
+itself; the bar is a rough bar on a skirt-dominated output probe, not
+a sharp gate); Ghost morph spectral balance moves 1.42 dB, needs >6 dB;
+Ghost Mask depth 0.8 pocket ratio 4.342, needs <0.7 (the near band got
+louder, 4.255× — AM sidebands from the envelope sweep, not the
+envelope). These figures supersede the ones first recorded for this
+finding (centroid 253/254/253 Hz, burst 5.63× vs 2.20×, control 5.66×,
+morph 3.07 dB, Mask 1.369 / near 1.533×): the envelope-ratio and
+control drift is the Step 3 test-fixture retune (the /a/ floor
+0.15 → 0.05 and the /i/ F2 width 150 → 250 Hz in `morphVowel`) —
+re-running with the old fixture reproduces 5.63× and 5.66× exactly —
+and the Ghost output-side drift is not explained by the Step 1
+`analyseBins` stride fix (reverting it changes nothing measurable),
+so the earlier output-side values are not reproducible from the
+committed code and are superseded. The verdicts are unchanged on all
+four sub-tests: the Ghost engine fails every one, and the filterbank
+control still moves/follows. Track B (iPlug2) confirmed the same
+finding independently (burst 41.5× vs 1.32×; centroid 1144/1144/1142
+Hz; Mask 0.993×/0.993×). **Do not ship the Ghost engine as a vocoder
+on this resynthesis.** The redesign decision (FFT cross-synthesis vs
+per-band carrier filtering vs park Ghost as analysis-only) is owed —
+see §6.6. The Ghost engine's mode 3 (Morph) still uses the old blend
+formula and cannot work as a morph on this resynthesis.
 
 ### 4.5 Carrier and Formant Scale (Ghost Engine)
 
