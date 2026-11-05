@@ -384,6 +384,23 @@ public:
     }
 
 
+    // Formant-shifted per-band envelope actually imposed on the carrier,
+    // for measurement and UI readout. Unlike getEffectiveEnvelope (which
+    // reads the raw band envelope), this applies the formant-shift
+    // remap -- and the freeze snapshot when freeze is on -- exactly as
+    // the band loop reads it via readShiftedEnvelope. In Morph mode it
+    // is the first (main-input) envelope, shifted; the morph
+    // interpolation happens on the shifted envelopes in the band loop.
+    // Read-only: it does not change DSP state.
+    float getShiftedEnvelope(int band, int channel = 0) const noexcept
+    {
+        const int bi = juce::jlimit(0, kNumBands - 1, band);
+        const int ch = juce::jlimit(0, kMaxChannels - 1, channel);
+        const float formantBins = params.formantShift / 12.0f * 8.0f;
+        return readShiftedEnvelope(ch, static_cast<float>(bi) - formantBins,
+                                   params.freeze > 0.5f);
+    }
+
 private:
     struct Band
     {
