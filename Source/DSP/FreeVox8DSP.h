@@ -20,10 +20,19 @@
 // - no coefficient rebuilds inside process()
 // - no locks, file I/O, background threads, or UI ownership in DSP
 // - stable parameter/session contract for the later STFT/phase-vocoder backend
+// Band count is compile-time. The production plugin ships 128. The
+// STOI reduced-band runs (paper §4.2 saturation question) rebuild this
+// same code with FREEVOX8_NUM_BANDS=32/16, which re-spaces the log
+// filterbank over the same 55 Hz–18.5 kHz range -- a true fewer-band
+// vocoder, not an envelope grouping of the 128-band one. Default 128.
+#ifndef FREEVOX8_NUM_BANDS
+#define FREEVOX8_NUM_BANDS 128
+#endif
+
 class FreeVox8DSP
 {
 public:
-    static constexpr int kNumBands = 128;
+    static constexpr int kNumBands = FREEVOX8_NUM_BANDS;
     static constexpr int kMaxChannels = 2;
 
     enum class Mode : int
@@ -465,7 +474,13 @@ private:
     static float bandGain(int band) noexcept
     {
         const float normalized = static_cast<float>(band) / static_cast<float>(kNumBands - 1);
-        return 0.038f + 0.040f * normalized;
+        // Level invariance across band counts: the vocoded sum adds N
+        // band gains, so scale by 128/N -- at N=128 this is exactly 1.
+        // Without it a 16-band render would be ~8x quieter than the
+        // 128-band one and a band-count comparison would measure level,
+        // not intelligibility. The STOI tool normalises level anyway;
+        // this keeps the drive/tanh stage operating at the same level.
+        return (0.038f + 0.040f * normalized) * (128.0f / static_cast<float>(kNumBands));
     }
 
     static float highBandWeight(int band) noexcept

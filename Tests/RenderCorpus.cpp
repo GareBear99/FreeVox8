@@ -241,8 +241,9 @@ int main(int argc, char** argv)
         return 1;
     }
     const std::vector<float> clean = resampleLinear(in, srIn, sr);
-    std::printf("render: %s (%d Hz, %.2f s) -> %d Hz, carrier MIDI %d\n",
-                argv[1], srIn, static_cast<double>(in.size()) / srIn, sr, note);
+    std::printf("render: %s (%d Hz, %.2f s) -> %d Hz, carrier MIDI %d, %d bands\n",
+                argv[1], srIn, static_cast<double>(in.size()) / srIn, sr, note,
+                FreeVox8DSP::kNumBands);
 
     FreeVox8DSP dsp;
     dsp.prepare(static_cast<double>(sr), 512, 2);

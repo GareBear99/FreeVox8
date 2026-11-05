@@ -125,6 +125,22 @@ duplicator form as originally written did not compile. (Fixed 2026-11-05;
 the instance count is unchanged — 128 bands × 2 paths × 2 filters = 512
 filter instances per channel.)
 
+**Measured — intelligibility saturates by 16 bands (STOI, 2026-11-05).**
+The band count is a compile-time constant (`FREEVOX8_NUM_BANDS`, default
+128); rebuilding with 32 or 16 re-spaces the same log filterbank over the
+same 55 Hz–18.5 kHz range, a true fewer-band vocoder, not an envelope
+grouping of the 128-band one. Band gains scale by 128/N so the drive
+stage sees the same level at every count (at N = 128 the factor is
+exactly 1, and a 128-band re-render of the corpus is byte-identical to
+the original). On the fixed 10-sentence CMU ARCTIC corpus (bdl male +
+slt female, fixed carrier MIDI 60, Bench STOI, envelope-lag aligned,
+median lag 20 ms at all three counts): **128 bands 0.5817, 32 bands
+0.5816, 16 bands 0.5807** (bdl 0.6136/0.6132/0.6122; slt 0.5499/0.5499/
+0.5492; per-band means agree to ~0.01). The spread over 128 → 16 is
+0.0010 — flat. 128 bands buys Ghost/Morph resolution, not vocoder
+intelligibility; the plain vocoder is equally intelligible at 16.
+Renderer: `Tests/RenderCorpus.cpp`, driver `Tests/render_corpus.sh`.
+
 ### 3.2 Carrier Synthesis
 
 Internal MIDI-controlled carrier with four waveform components, blended by
