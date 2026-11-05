@@ -48,6 +48,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <complex>
 #include <cstdio>
 #include <vector>
 
@@ -234,6 +235,350 @@ void runCase(const char* name, double f0, double vibHz, double depthSt)
                 name, s.peakBand, s.peakFreq, s.ratioDb, s.conc, maxDrift);
 }
 
+// --- WASPAA beta/lambda correction (Step 2, second half) ---
+// Gaussian window w(t) = exp(-pi*alpha*t^2), alpha = 10740 (sigma_t = 170
+// samples, window value ~0.01 at the frame edges). Alpha 4725 (sigma_t =
+// 256) was tried first and REJECTED: its 13.5% edge truncation convolves
+// the spectrum with a sinc whose sidelobes dominate the log-spectrum fit
+// -- a stationary 1000 Hz tone then read beta = +2355 Hz/s, f0 24 Hz low
+// (diagnostic /tmp/waspaa_diag.cpp). At alpha = 10740 the same diagnostic
+// recovers beta = 0.0 stationary, +391 for a +400 chirp, +5036 for +5000,
+// +222 for a vibrato-scale +241 chirp at 220 Hz, f0 within 0.3 Hz. The
+// fit math itself is exact on analytic eq. 7 spectra at either alpha.
+// (WASPAA 2001 eq. 6-7): X(f) = c/sqrt(alpha - j beta) *
+// exp(-pi (f - f0 + j lambda)^2 / (alpha - j beta)).
+// eq. 9: log[X(f+df)/X(f)] = A f + B; eq. 10: A = -2 pi (alpha + j beta) /
+// (alpha^2 + beta^2) df, B = A (df/2 - f0 + j lambda); eq. 11: beta =
+// Im[A]/Re[A] * alpha, f0 = df/2 - Re[B/A], lambda = Im[B/A].
+// De-sweep transfer (eq. 15 with beta_y = 0, lambda_y = lambda):
+// H(f) = sqrt((alpha - j beta)/alpha) * exp(pi[(f-f0+j lambda)^2 /
+// (alpha - j beta) - (f-f0+j lambda)^2/alpha]).
+// Time origin is the frame centre, so the DFT phase is smooth in f and
+// the principal-branch complex log needs no unwrapping across df steps.
+// Equation text re-verified against the ResearchGate full text 2026-11-05.
+constexpr double kGaussAlpha = 10740.0;
+
+struct PeakEst
+{
+    int band = -1;
+    double fPeak = 0.0, beta = 0.0, f0 = 0.0, lambda = 0.0, mag = 0.0;
+    bool valid = false;
+};
+
+using Cplx = std::complex<double>;
+
+Cplx gaussDft(const std::vector<float>& frame, double freq)
+{
+    // frame[0..1023] oldest -> newest; t measured from frame centre.
+    Cplx sum(0.0, 0.0);
+    for (int i = 0; i < kFftSize; ++i)
+    {
+        const double t = (static_cast<double>(i) - (kFftSize - 1) / 2.0) / kSr;
+        const double w = std::exp(-3.141592653589793 * kGaussAlpha * t * t);
+        const double a = -2.0 * 3.141592653589793 * freq * t;
+        sum += static_cast<double>(frame[static_cast<size_t>(i)]) * w * Cplx(std::cos(a), std::sin(a));
+    }
+    return sum;
+}
+
+// Estimate (beta, f0, lambda) for one spectral peak from the complex
+// Gaussian spectrum around fPeak, using a least-squares fit of
+// g(f) = log[X(f+df)/X(f)] = A f + B over f = fPeak + k*df.
+PeakEst estimatePeak(const std::vector<float>& frame, int band, double mag)
+{
+    PeakEst out;
+    out.band = band;
+    out.fPeak = bandFreq(band);
+    out.mag = mag;
+    const double df = kSr / static_cast<double>(kFftSize); // FFT bin spacing,
+    // as the paper specifies -- NOT the local log-band spacing. The band
+    // spacing at 220 Hz is ~10 Hz, a quarter of sigma_f (41 Hz): the fit
+    // then reads tiny log differences and any spectral perturbation (the
+    // neighbouring harmonics' truncation sidelobes) blows beta up to
+    // thousands of Hz/s on vowel frames (first run: |beta_fund| mean 5660,
+    // theory max ~240). With df = 43 Hz the fit spans +-2 sigma_f and is
+    // well conditioned; the synthetic recovery still verifies.
+    if (df <= 0.0)
+        return out;
+    // X at fPeak + k*df, k = -2..+2.
+    Cplx X[5];
+    for (int k = -2; k <= 2; ++k)
+        X[k + 2] = gaussDft(frame, out.fPeak + k * df);
+    // g(f) at f = fPeak + k*df, k = -2..+1.
+    const int n = 4;
+    double fs[4];
+    Cplx gs[4];
+    for (int k = 0; k < n; ++k)
+    {
+        fs[k] = out.fPeak + (k - 2) * df;
+        if (std::abs(X[k + 1]) < 1e-12 || std::abs(X[k]) < 1e-12)
+            return out;
+        gs[k] = std::log(X[k + 1] / X[k]);
+    }
+    // Complex least squares: g = A f + B.
+    double fMean = 0.0;
+    Cplx gMean(0.0, 0.0);
+    for (int k = 0; k < n; ++k)
+    {
+        fMean += fs[k];
+        gMean += gs[k];
+    }
+    fMean /= n;
+    gMean /= static_cast<double>(n);
+    double sff = 0.0;
+    Cplx sfg(0.0, 0.0);
+    for (int k = 0; k < n; ++k)
+    {
+        const double d = fs[k] - fMean;
+        sff += d * d;
+        sfg += d * (gs[k] - gMean);
+    }
+    if (sff <= 0.0)
+        return out;
+    const Cplx A = sfg / sff;
+    const Cplx B = gMean - A * fMean;
+    if (A.real() >= 0.0)
+        return out; // eq. 10 requires Re[A] < 0
+    const double beta = A.imag() / A.real() * kGaussAlpha; // eq. 11
+    const Cplx bOverA = B / A;
+    const double f0 = 0.5 * df - bOverA.real();
+    const double lambda = bOverA.imag();
+    // Cross-check: alpha recovered from A must match the window alpha.
+    const Cplx u = -A / (2.0 * 3.141592653589793 * df); // (alpha + j beta)/(alpha^2+beta^2)
+    const double alphaEst = (1.0 / u).real();
+    if (alphaEst < 0.5 * kGaussAlpha || alphaEst > 2.0 * kGaussAlpha)
+        return out;
+    if (std::abs(beta) > 2.0 * kGaussAlpha)
+        return out;
+    if (std::abs(f0 - out.fPeak) > 2.0 * df)
+        return out;
+    if (std::abs(lambda) > 100.0)
+        return out;
+    out.beta = beta;
+    out.f0 = f0;
+    out.lambda = lambda;
+    out.valid = true;
+    return out;
+}
+
+Cplx desweepTransfer(double f, const PeakEst& p)
+{
+    const Cplx alpha(kGaussAlpha, 0.0);
+    const Cplx aX(kGaussAlpha, -p.beta); // alpha - j beta
+    const Cplx d(f - p.f0, p.lambda);    // f - f0 + j lambda
+    Cplx h = std::sqrt(aX / alpha) * std::exp(3.141592653589793 * (d * d / aX - d * d / alpha));
+    const double m = std::abs(h);
+    if (m > 2.0)
+        h *= 2.0 / m;
+    else if (m > 0.0 && m < 0.5)
+        h *= 0.5 / m;
+    return h;
+}
+
+// Gaussian-window analyser mirroring GhostAnalyser's ring/hop/follower/
+// frozen discipline exactly, except the spectrum is the complex Gaussian
+// DFT and, when correct == true, each peak's eq. 15 de-sweep transfer is
+// applied before magnitudes feed the envelope follower.
+struct CorrectedAnalyser
+{
+    std::vector<float> modRing = std::vector<float>(kFftSize, 0.0f);
+    std::vector<float> gaussWin = std::vector<float>(kFftSize, 0.0f);
+    std::vector<float> env = std::vector<float>(kDisplayBins, 0.0f);
+    std::vector<float> frozen = std::vector<float>(kDisplayBins, 0.0f);
+    std::vector<Cplx> spec = std::vector<Cplx>(kDisplayBins);
+    std::vector<double> betaFundTrace;
+    int writeIndex = 0;
+    int hopCountdown = kHopSize;
+    bool correct = false;
+    int lastValidPeaks = 0;
+    double lastBetaFund = 0.0;
+
+    explicit CorrectedAnalyser(bool doCorrect) : correct(doCorrect)
+    {
+        for (int i = 0; i < kFftSize; ++i)
+        {
+            const double t = (static_cast<double>(i) - (kFftSize - 1) / 2.0) / kSr;
+            gaussWin[static_cast<size_t>(i)] = static_cast<float>(std::exp(-3.141592653589793 * kGaussAlpha * t * t));
+        }
+    }
+
+    void feed(float s, bool freeze)
+    {
+        modRing[static_cast<size_t>(writeIndex)] = s;
+        writeIndex = (writeIndex + 1) & (kFftSize - 1);
+        if (--hopCountdown <= 0)
+        {
+            hopCountdown = kHopSize;
+            analyseBins(freeze);
+        }
+    }
+
+    void analyseBins(bool fr)
+    {
+        std::vector<float> frame(kFftSize);
+        for (int i = 0; i < kFftSize; ++i)
+            frame[static_cast<size_t>(i)] = modRing[static_cast<size_t>((writeIndex + i) & (kFftSize - 1))];
+        for (int b = 0; b < kDisplayBins; ++b)
+        {
+            const double f = bandFreq(b);
+            Cplx sum(0.0, 0.0);
+            for (int i = 0; i < kFftSize; ++i)
+            {
+                const double t = (static_cast<double>(i) - (kFftSize - 1) / 2.0) / kSr;
+                const double a = -2.0 * 3.141592653589793 * f * t;
+                sum += static_cast<double>(frame[static_cast<size_t>(i)]) * gaussWin[static_cast<size_t>(i)] * Cplx(std::cos(a), std::sin(a));
+            }
+            spec[static_cast<size_t>(b)] = sum;
+        }
+        std::vector<PeakEst> peaks;
+        if (correct)
+        {
+            double mx = 0.0;
+            for (int b = 0; b < kDisplayBins; ++b)
+                mx = std::max(mx, std::abs(spec[static_cast<size_t>(b)]));
+            for (int b = 1; b < kDisplayBins - 1; ++b)
+            {
+                const double m = std::abs(spec[static_cast<size_t>(b)]);
+                if (m < 0.08 * mx)
+                    continue;
+                if (m < std::abs(spec[static_cast<size_t>(b - 1)]) || m < std::abs(spec[static_cast<size_t>(b + 1)]))
+                    continue;
+                PeakEst p = estimatePeak(frame, b, m);
+                if (p.valid)
+                    peaks.push_back(p);
+            }
+            lastValidPeaks = static_cast<int>(peaks.size());
+            lastBetaFund = 0.0;
+            double bestD = 1e9;
+            for (auto& p : peaks)
+            {
+                const double d = std::abs(p.f0 - 220.0);
+                if (d < bestD)
+                {
+                    bestD = d;
+                    lastBetaFund = p.beta;
+                }
+            }
+            betaFundTrace.push_back(lastBetaFund);
+        }
+        for (int b = 0; b < kDisplayBins; ++b)
+        {
+            Cplx X = spec[static_cast<size_t>(b)];
+            if (correct && !peaks.empty())
+            {
+                // Nearest peak in log frequency; apply its de-sweep
+                // transfer only inside the peak's region (+-3 sigma_f).
+                const PeakEst* best = nullptr;
+                double bestD = 1e9;
+                for (auto& p : peaks)
+                {
+                    const double d = std::abs(std::log(bandFreq(b) / p.f0));
+                    if (d < bestD)
+                    {
+                        bestD = d;
+                        best = &p;
+                    }
+                }
+                if (best != nullptr)
+                {
+                    const double sigF = std::sqrt((kGaussAlpha * kGaussAlpha + best->beta * best->beta) / (2.0 * 3.141592653589793 * kGaussAlpha));
+                    if (std::abs(bandFreq(b) - best->f0) <= 3.0 * sigF)
+                        X *= desweepTransfer(bandFreq(b), *best);
+                }
+            }
+            const float mag = static_cast<float>(std::abs(X)) * 0.02f;
+            float& e = env[static_cast<size_t>(b)];
+            e = mag > e ? 0.24f * e + 0.76f * mag : 0.92f * e + 0.08f * mag;
+            if (!fr)
+                frozen[static_cast<size_t>(b)] = 0.998f * frozen[static_cast<size_t>(b)] + 0.002f * e;
+        }
+    }
+};
+
+void verifyBeta()
+{
+    // Single-frame estimator check on known chirps. Frame centred at
+    // t=0; x(tau) = sin(2 pi (f0 tau + beta tau^2/2)) * exp(2 pi lambda tau).
+    auto chirpFrame = [](double f0, double beta, double lambda) {
+        std::vector<float> fr(kFftSize);
+        for (int i = 0; i < kFftSize; ++i)
+        {
+            const double tau = (static_cast<double>(i) - (kFftSize - 1) / 2.0) / kSr;
+            const double ph = 2.0 * 3.141592653589793 * (f0 * tau + 0.5 * beta * tau * tau);
+            fr[static_cast<size_t>(i)] = static_cast<float>(std::sin(ph) * std::exp(2.0 * 3.141592653589793 * lambda * tau));
+        }
+        return fr;
+    };
+    auto check = [&](const char* name, double f0, double beta, double lambda) {
+        const std::vector<float> fr = chirpFrame(f0, beta, lambda);
+        int pk = 0;
+        double mx = -1.0;
+        for (int b = 0; b < kDisplayBins; ++b)
+        {
+            const double m = std::abs(gaussDft(fr, bandFreq(b)));
+            if (m > mx)
+            {
+                mx = m;
+                pk = b;
+            }
+        }
+        const PeakEst p = estimatePeak(fr, pk, mx);
+        std::printf("  %-34s true beta=%+7.1f f0=%.1f lam=%+.1f | est beta=%+8.1f f0=%7.2f lam=%+6.2f valid=%d\n",
+                    name, beta, f0, lambda, p.beta, p.f0, p.lambda, static_cast<int>(p.valid));
+    };
+    std::printf("beta recovery on synthetic swept sinusoids (single Gaussian frame):\n");
+    check("stationary 1000 Hz", 1000.0, 0.0, 0.0);
+    check("chirp 1000 Hz beta=+400", 1000.0, 400.0, 0.0);
+    check("chirp 1000 Hz beta=-400", 1000.0, -400.0, 0.0);
+    check("chirp 1000 Hz beta=+5000", 1000.0, 5000.0, 0.0);
+    check("chirp 1000 Hz beta=+400 lam=+3", 1000.0, 400.0, 3.0);
+    check("vibrato-scale 220 Hz beta=+241", 220.0, 241.0, 0.0);
+}
+
+void runCaseCorrected(const char* name, double f0, double vibHz, double depthSt)
+{
+    CorrectedAnalyser unc(false), cor(true);
+    const int total = static_cast<int>(2.0 * kSr);
+    const int freezeAt = static_cast<int>(1.0 * kSr);
+    std::vector<double> rFrameUnc, rFrameCor;
+    for (int n = 0; n < total; ++n)
+    {
+        const double t = n / kSr;
+        const float s = vowelSample(t, f0, vibHz, depthSt);
+        const bool fr = n >= freezeAt;
+        unc.feed(s, fr);
+        cor.feed(s, fr);
+        if (fr && (n % 1102 == 0) && rFrameUnc.size() < 8)
+        {
+            rFrameUnc.push_back(measure(unc.env).ratioDb);
+            rFrameCor.push_back(measure(cor.env).ratioDb);
+        }
+    }
+    const Snapshot sU = measure(unc.frozen);
+    const Snapshot sC = measure(cor.frozen);
+    double mU = 0.0, mC = 0.0;
+    for (size_t k = 0; k < rFrameUnc.size(); ++k)
+    {
+        mU += rFrameUnc[k];
+        mC += rFrameCor[k];
+    }
+    mU /= std::max<size_t>(rFrameUnc.size(), 1);
+    mC /= std::max<size_t>(rFrameCor.size(), 1);
+    // Beta trace over the second half of the run (post-freeze frames).
+    double bMean = 0.0, bMax = 0.0;
+    size_t bN = 0;
+    const size_t half = cor.betaFundTrace.size() / 2;
+    for (size_t k = half; k < cor.betaFundTrace.size(); ++k)
+    {
+        bMean += std::abs(cor.betaFundTrace[k]);
+        bMax = std::max(bMax, std::abs(cor.betaFundTrace[k]));
+        ++bN;
+    }
+    bMean /= std::max<size_t>(bN, 1);
+    std::printf("%-28s frozen R: gauss %+.2f dB -> corr %+.2f dB (d=%+.2f) | per-frame R: %+.2f -> %+.2f (d=%+.2f) | |beta_fund| mean %.0f max %.0f Hz/s, %d valid peaks/frame\n",
+                name, sU.ratioDb, sC.ratioDb, sC.ratioDb - sU.ratioDb, mU, mC, mC - mU, bMean, bMax, cor.lastValidPeaks);
+}
+
 } // namespace
 
 int main()
@@ -249,5 +594,17 @@ int main()
     runCase("stationary control F0=250", 250.0, 6.0, 0.0);
     runCase("vibrato +-0.5 st F0=250", 250.0, 6.0, 0.5);
     runCase("vibrato +-1.0 st F0=250", 250.0, 6.0, 1.0);
+    std::printf("\n--- Step 2 second half: WASPAA beta/lambda correction ---\n");
+    std::printf("Gaussian window, eq. 9-11 fit per peak, eq. 15 de-sweep (beta_y=0).\n");
+    std::printf("Decision rule: implement only if corrected frozen R improves by >= 3 dB\n");
+    std::printf("on the +-0.5 st signal, without degrading the stationary control by > 0.5 dB.\n\n");
+    verifyBeta();
+    std::printf("\n");
+    runCaseCorrected("stationary control F0=220", 220.0, 6.0, 0.0);
+    runCaseCorrected("vibrato +-0.5 st F0=220", 220.0, 6.0, 0.5);
+    runCaseCorrected("vibrato +-1.0 st F0=220", 220.0, 6.0, 1.0);
+    runCaseCorrected("stationary control F0=250", 250.0, 6.0, 0.0);
+    runCaseCorrected("vibrato +-0.5 st F0=250", 250.0, 6.0, 0.5);
+    runCaseCorrected("vibrato +-1.0 st F0=250", 250.0, 6.0, 1.0);
     return 0;
 }

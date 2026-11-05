@@ -475,18 +475,54 @@ frame indefinitely (errors accumulate). This asymmetry makes the correction more
 likely to have audible value in the freeze path than in time-scaling.
 Empirical verification is designated as primary future work (§6.1).
 
+**Pilot result (2026-11-05, `Tests/FreezePilot.cpp`): the correction was
+built and measured, and it FAILED the pre-written decision rule, so it is NOT
+implemented in `analyseBins()`.** The pilot implements the full method
+(Gaussian-window complex spectrum, eq. 9–11 least-squares fit per peak,
+eq. 15 de-sweep transfer with βy = 0). The estimator was verified first on
+synthetic swept sinusoids: β recovered as +0.0 (stationary), +401/−401 (true
+±400), +5036 (true +5000), +443 with λ = +3.01 (true +400/+3.0), +253 (true
++241, vibrato-scale at 220 Hz); a pure sinusoidally frequency-modulated 220 Hz
+tone recovered +248/−258 against a true ±240 Hz/s. Two implementation
+pitfalls were found and fixed in the pilot: a Gaussian with σt = 256 samples
+has 13.5% edge truncation, whose sinc sidelobes corrupt the fit (a stationary
+tone read β = +2355 Hz/s) — σt = 170 samples (α = 10740, ~1% edge value)
+recovers cleanly; and Δf must be the FFT bin spacing (43 Hz), not the local
+log-band spacing (~10 Hz at 220 Hz), or the fit is ill-conditioned. On the
+pilot signal (sustained /a/ vowel, 6 Hz vibrato, 44.1 kHz) the corrected
+frozen snapshot improved R by −0.02 dB (±0.5 st, F0 = 220), +0.02 dB (±0.5 st,
+F0 = 250), +0.47 dB (±1.0 st, F0 = 220) and +0.45 dB (±1.0 st, F0 = 250),
+against the ≥ 3 dB required; the stationary control was unchanged (0.00 dB).
+Per-frame R (isolating the intraframe effect from the frozen average)
+improved by at most +1.27 dB. The mechanism is quantitative: at vibrato
+sweep rates β/α ≈ 0.02, so the intraframe sweep (≈0.4 st within one 23 ms
+frame) is negligible next to the window's own spectral width, and the frozen
+snapshot's smear is dominated by the leaky average over many vibrato cycles
+(±0.5 st extent) — which no per-frame correction can remove. One further
+limitation: on multi-harmonic vowel frames the per-peak fit is unreliable
+(mean |β| of the fundamental peak 6650–9780 Hz/s against a true maximum of
+~240 Hz/s), because the truncated window's sidelobes couple neighbouring
+harmonics, violating the paper's isolated-peak assumption; on isolated tones
+and pure FM the same estimator is accurate to a few percent. The freeze blur
+therefore stays a known, bounded limitation: a frozen vibrato vowel holds its
+pitch to within the vibrato extent, smeared by ~5 dB of peak concentration,
+and the correction is not worth its cost in the real-time path.
+
 ---
 
 ## 6. Future Work
 
 ### 6.1 Intraframe Sweep Correction for Freeze Mode
 
-Implement the Bristow-Johnson/Bogdanowicz β/λ estimation [4] in
-`analyseBins()` prior to freeze snapshot capture. Target test: freeze a
-sustained vocal mid-vibrato with and without sweep correction; measure whether
-the frozen pitch holds or wobbles on resynthesis. Pilot result will determine
-whether the correction produces audible improvement in the freeze path
-(§5.2 hypothesis).
+**Pilot run 2026-11-05 — correction NOT implemented (§5.2).** The
+Bristow-Johnson/Bogdanowicz β/λ estimation was built in the pilot harness
+(`Tests/FreezePilot.cpp`), verified on synthetic chirps and pure FM, and
+measured against the pre-written ≥ 3 dB rule on the frozen snapshot. Best
+frozen-snapshot improvement was +0.47 dB; the stationary control was
+unchanged. The freeze blur stays a known, bounded limitation (see §5.2 for
+the numbers and the mechanism). No further work is planned on this
+correction for the freeze path; the sinusoidal-model backend (§6.2, and the
+ProVox8 tier) is the remaining route to a sharper frozen pitch.
 
 ### 6.2 Full Phase Vocoder Backend
 
