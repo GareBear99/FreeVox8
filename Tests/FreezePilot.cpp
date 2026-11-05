@@ -49,6 +49,7 @@
 #include <algorithm>
 #include <cmath>
 #include <complex>
+#include <cstdint>
 #include <cstdio>
 #include <vector>
 
@@ -579,6 +580,100 @@ void runCaseCorrected(const char* name, double f0, double vibHz, double depthSt)
                 name, sU.ratioDb, sC.ratioDb, sC.ratioDb - sU.ratioDb, mU, mC, mC - mU, bMean, bMax, cor.lastValidPeaks);
 }
 
+// --- Bench cross-check renders (Step 2, ARC-AudioBench freeze-blur) ---
+// Render a frozen envelope to audio as a bank of sinusoids at the 128
+// log-band frequencies with the frozen magnitudes, so the Bench
+// freeze-blur test (WAV in, per-harmonic peak-vs-adjacent blur) can
+// measure the same frozen snapshot the pilot's R metric measures. The
+// resynthesis is a measurement instrument, like the Bench's own
+// simulate_freeze -- it is NOT the Ghost resynthesis (which is broken;
+// see Tests/DSPVerify.cpp testGhostResynthesis). Normalised to peak 0.5.
+void writeWavMono16(const char* path, const std::vector<float>& x)
+{
+    std::FILE* f = std::fopen(path, "wb");
+    if (f == nullptr)
+    {
+        std::printf("  cannot write %s\n", path);
+        return;
+    }
+    const std::uint32_t n = static_cast<std::uint32_t>(x.size());
+    const std::uint32_t sr = 44100;
+    const std::uint32_t bytes = n * 2;
+    const auto w32 = [&](std::uint32_t v) { std::fwrite(&v, 4, 1, f); };
+    const auto w16 = [&](std::uint16_t v) { std::fwrite(&v, 2, 1, f); };
+    std::fwrite("RIFF", 1, 4, f);
+    w32(36 + bytes);
+    std::fwrite("WAVE", 1, 4, f);
+    std::fwrite("fmt ", 1, 4, f);
+    w32(16);
+    w16(1);
+    w16(1);
+    w32(sr);
+    w32(sr * 2);
+    w16(2);
+    w16(16);
+    std::fwrite("data", 1, 4, f);
+    w32(bytes);
+    for (float v : x)
+    {
+        const float c = std::max(-1.0f, std::min(1.0f, v));
+        w16(static_cast<std::uint16_t>(static_cast<std::int16_t>(std::lrint(c * 32767.0f))));
+    }
+    std::fclose(f);
+}
+
+std::vector<float> renderFrozenPartials(const std::vector<float>& frozen, double seconds)
+{
+    const int n = static_cast<int>(seconds * kSr);
+    std::vector<float> out(static_cast<size_t>(n), 0.0f);
+    double peak = 0.0;
+    for (int i = 0; i < n; ++i)
+    {
+        double s = 0.0;
+        for (int b = 0; b < kDisplayBins; ++b)
+            s += static_cast<double>(frozen[static_cast<size_t>(b)])
+               * std::sin(2.0 * 3.141592653589793 * bandFreq(b) * i / kSr);
+        out[static_cast<size_t>(i)] = static_cast<float>(s);
+        peak = std::max(peak, std::abs(s));
+    }
+    const float g = peak > 0.0 ? static_cast<float>(0.5 / peak) : 0.0f;
+    for (float& v : out)
+        v *= g;
+    return out;
+}
+
+void renderFreezeWavs()
+{
+    // Same protocol as the pilot runs: 2 s of vowel, freeze at 1 s.
+    // F0=220, stationary control + 6 Hz vibrato +-0.5 st.
+    const char* dir = "/home/hatch/workspace/vox8-bench/freeze/";
+    auto run = [&](double f0, double depthSt, const char* tag) {
+        GhostAnalyser hann;
+        CorrectedAnalyser gauss(false), corr(true);
+        const int total = static_cast<int>(2.0 * kSr);
+        const int freezeAt = static_cast<int>(1.0 * kSr);
+        for (int n = 0; n < total; ++n)
+        {
+            const double t = n / kSr;
+            const float s = vowelSample(t, f0, 6.0, depthSt);
+            const bool fr = n >= freezeAt;
+            hann.feed(s, fr);
+            gauss.feed(s, fr);
+            corr.feed(s, fr);
+        }
+        char path[256];
+        std::snprintf(path, sizeof(path), "%sfrozen_hann_%s.wav", dir, tag);
+        writeWavMono16(path, renderFrozenPartials(hann.frozen, 1.0));
+        std::snprintf(path, sizeof(path), "%sfrozen_gauss_%s.wav", dir, tag);
+        writeWavMono16(path, renderFrozenPartials(gauss.frozen, 1.0));
+        std::snprintf(path, sizeof(path), "%sfrozen_corr_%s.wav", dir, tag);
+        writeWavMono16(path, renderFrozenPartials(corr.frozen, 1.0));
+        std::printf("  rendered frozen snapshots (%s): hann / gauss / corr\n", tag);
+    };
+    run(220.0, 0.0, "static");
+    run(220.0, 0.5, "vibrato");
+}
+
 } // namespace
 
 int main()
@@ -606,5 +701,7 @@ int main()
     runCaseCorrected("stationary control F0=250", 250.0, 6.0, 0.0);
     runCaseCorrected("vibrato +-0.5 st F0=250", 250.0, 6.0, 0.5);
     runCaseCorrected("vibrato +-1.0 st F0=250", 250.0, 6.0, 1.0);
+    std::printf("\n--- Bench cross-check renders (frozen snapshots -> WAV) ---\n");
+    renderFreezeWavs();
     return 0;
 }

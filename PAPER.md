@@ -508,6 +508,21 @@ therefore stays a known, bounded limitation: a frozen vibrato vowel holds its
 pitch to within the vibrato extent, smeared by ~5 dB of peak concentration,
 and the correction is not worth its cost in the real-time path.
 
+**Independent cross-check, ARC-AudioBench freeze-blur test (2026-11-05,
+Bench HEAD `a4fdd5a`).** The pilot's frozen snapshots were rendered to
+audio as banks of sinusoids at the 128 log-band frequencies
+(`Tests/FreezePilot.cpp` renderFreezeWavs — a measurement instrument,
+not the Ghost resynthesis) and run through the Bench's `freeze-blur`
+tool (per-harmonic peak-vs-adjacent-bin blur, magnitude-weighted mean).
+Mean blur: static −3.31 dB (Gaussian, corrected identical), vibrato
+−2.69 dB (Gaussian uncorrected) vs −2.72 dB (corrected) — a 0.03 dB
+correction gain (Bench `--compare` reports mean_blur_difference_db
+0.029), against the ≥ 3 dB rule. The two measurements agree: the
+correction changes the frozen blur by nothing measurable. Track B
+independently reproduced the pilot baseline exactly (stationary 220
+−0.90 dB, vibrato ±0.5 st −5.73 dB; stationary 250 +0.50 dB, vibrato
+−5.69 dB).
+
 ---
 
 ## 6. Future Work
