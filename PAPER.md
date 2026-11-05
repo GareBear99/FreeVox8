@@ -115,9 +115,15 @@ f_lo(i) = 55 × (18500/55)^(i/128)
 f_hi(i) = max(f_lo(i) + 18 Hz, f_lo(i+1))
 ```
 
-Each band uses a JUCE `ProcessorDuplicator<IIR::Filter>` pair (HP + LP at
-Butterworth Q=0.707) for both the modulator and carrier paths, built once in
-`prepare()` and never rebuilt during processing.
+Each band uses a pair of mono JUCE `IIR::Filter<float>` objects (HP + LP at
+Butterworth Q=0.707) per channel for both the modulator and carrier paths,
+built once in `prepare()` and never rebuilt during processing. The filters
+are deliberately plain per-channel mono filters, not
+`ProcessorDuplicator<IIR::Filter>`: the duplicator has no `processSample()`
+in JUCE 7 or 8, and this engine processes sample-by-sample, so the
+duplicator form as originally written did not compile. (Fixed 2026-11-05;
+the instance count is unchanged — 128 bands × 2 paths × 2 filters = 512
+filter instances per channel.)
 
 ### 3.2 Carrier Synthesis
 
@@ -141,6 +147,14 @@ MIDI note tracking: `extractLatestMidiNote()` scans the JUCE `MidiBuffer` per
 block and updates `currentMidiNote`. Only the latest NoteOn in the block takes
 effect. The carrier frequency converts via standard A4=440 Hz equal temperament:
 `hz = 440 × 2^((note-69)/12)`.
+
+The carrier above is the Low Latency 128 carrier. The Spectral Ghost 1024
+engine uses a different, fixed carrier (§4.5): `0.46*saw + 0.32*sine +
+0.18*pulse`, ×0.72, + 28% dry — no sub oscillator, no `carrierBlend`
+parameter. The two engines do not share a carrier implementation, and the
+`carrierBlend` control only affects the filterbank engine. This section
+documents each engine's carrier as shipped; unifying them is a v1.0 decision,
+not a silent edit.
 
 ### 3.3 Envelope Analysis
 
@@ -188,7 +202,7 @@ frame-assumption.
 | Mode | Processing |
 |------|-----------|
 | Vocoder | Carrier × shifted envelope × consonant lift × band gain |
-| Mask | Dry × (1 − envelope × maskDepth × quality) |
+| Mask | Dry × (1 − meanEnvelope × maskDepth × (2.6 + quality)) — broadband, see below |
 | Ghost | Vocoded × (1 + ghost × 1.95) + dry × ghost × 0.06 |
 | Morph | 0.58 × vocoded + 0.42 × tanh(dry + vocoded × (0.28 + ghost × 0.92)) |
 
@@ -198,6 +212,20 @@ intelligible sibilance and breath.
 
 **Band gain:** `0.038 + 0.040 × (bi/127)` — slight high-frequency emphasis to
 counteract the natural energy rolloff of speech formants.
+
+**Mask is broadband in this engine, not per-band.** The filterbank Mask
+computes one reduction from the *mean* of all 128 shifted envelopes
+(`envelopeSum`, the average envelope across bands) and applies it as a
+single gain to the dry signal: `wet = dry × (1 − reduction) +
+transientReturn`. That is broadband ducking — the whole signal ducks when
+the mean envelope is high — which is exactly the pumping failure mode the
+golden test forbids ("audible spectral pocket without broadband pumping").
+The Spectral Ghost 1024 Mask, by contrast, ducks the carrier *per band*
+(`y = car × (1 − min(0.96, e × maskDepth × 3.2))` per bin, §4.5). The two
+engines therefore implement two different operations under one mode name.
+Making the filterbank Mask per-band (duck each carrier band by its own
+envelope, as Ghost does) is v1.0 work, gated by the pumping test — it is
+not a documentation fix.
 
 ### 3.6 Formant Shift
 
@@ -213,6 +241,53 @@ const float shiftedEnv = readShiftedEnvelope(ch, (float)bi - formantBins, freeze
 The shift is RT-safe: no coefficient rebuilds, no heap, executed entirely
 within the per-sample loop.
 
+The scale above — **8 bins per octave** — is the filterbank engine's scale.
+The Spectral Ghost 1024 backend shifts by **10 bins per octave** (§4.5), so
+the same `formantShift` value in semitones moves the formants by a different
+amount in each engine. Neither scale matches the band layout: 128 log-spaced
+bands over 55 Hz–18,500 Hz span log₂(18500/55) ≈ 8.39 octaves, i.e. ≈15.25
+bands per octave, so a +12 semitone setting moves the formants only ≈+6.3
+semitones in the filterbank and ≈+7.9 semitones in Ghost. Both engines
+under-shift relative to the labelled value. This paper states one number per
+engine as shipped; unifying both engines at the geometric ≈15.25
+bins/octave is a v1.0 decision (it changes the audible shift depth of existing
+presets), not a silent edit.
+
+### 3.7 Transient Protect — Traced Mechanism
+
+Transient Protect is a manual macro over a first-difference transient gate —
+not a transient detector in the spectral-peak sense, and it must not be cited
+as one (Röbel's per-peak transient detection [11] is a different mechanism;
+FreeVox8 does no per-peak detection anywhere).
+
+In the Low Latency 128 engine, per sample and per channel:
+
+```cpp
+const float transient = jlimit(0.0f, 1.0f,
+    std::abs(dry - previousInput[ch]) * 12.0f);
+previousInput[ch] = dry;
+// ...
+const float transientReturn = dry * transientProtect * transient * 0.12f;
+vocoded = vocoded * drive + breath + transientReturn;
+```
+
+The gate watches the dry (main input) signal: a large sample-to-sample jump
+(an onset) opens the gate, and the macro scales how much of that dry onset
+is mixed back into the vocoded signal. It does **not** modulate the envelope
+follower attack/release time constants, and there is no transient bypass
+path — the return is an additive dry-transient feed, present in Vocoder,
+Ghost and Morph modes, and added to the Mask wet signal as well. With a
+sidechain connected, the gate still watches the main input, not the sidechain
+modulator.
+
+In the Spectral Ghost 1024 engine the parameter was accepted into
+`Parameters` and forwarded from the filterbank, but as shipped it was never
+read in `process()` / `renderFrame()` / `analyseBins()` — the control was a
+no-op in the Ghost engine. That is fixed in this revision: the Ghost engine
+now applies the same first-difference gate and dry-transient return per
+sample in `process()`, before the wet/dry mix, so the control works in both
+engines and the transient passes through un-smeared by the OLA path.
+
 ---
 
 ## 4. Spectral Ghost 1024 Engine (FreeVox8SpectralEngine)
@@ -225,7 +300,7 @@ within the per-sample loop.
 | Hop size | 256 samples (75% overlap) |
 | Window | Hann (periodic, computed once in `prepare()`) |
 | Display bins | 128 (log-spaced subset) |
-| Latency | 1024 samples (≈23 ms at 44.1 kHz) |
+| Latency | 1024 samples nominal (≈23 ms at 44.1 kHz); **measured 990 samples (22.45 ms)** by noise-burst onset test (`Tests/DSPVerify.cpp`, VM) |
 
 The ring buffer (`inputRing`, `modRing`, `olaRing`) is a circular array of
 1024 floats per channel, pre-allocated in `prepare()`. `writeIndex` advances
@@ -248,8 +323,18 @@ for (int i = 0; i < kFftSize; i += 4) {
 float mag = sqrt(re*re + im*im) * 0.0018f;
 ```
 
-The stride-4 accumulation reduces cost by 4× with negligible accuracy loss on
-broadband signals.
+The accumulation steps the ring by a per-band stride (4 where alias-free,
+finer above): a stride-s Goertzel sum is alias-free only below sr/(2s), so
+a fixed stride of 4 is exact only below sr/8 (~5512 Hz at 44.1 kHz). As
+shipped, the stride was fixed at 4 for all bands, and every band above
+sr/8 was a mirror of low-frequency content — a pure 676 Hz sine lit band
+117 (11701 Hz) *stronger* than its true band 55. The claim that stride-4
+has "negligible accuracy loss" was wrong for tonal signals. Fixed
+2026-11-05: stride 4 for bands below sr/8, 3 below sr/6, 2 below sr/4,
+1 above (101/6/9/12 bands at 44.1 kHz), with the magnitude normalised by
+stride/4 against the 0.0018 scale. Cost rises from ~11.3M to ~15.4M
+transcendental calls/sec/channel at 44.1 kHz — the price of correctness,
+and the reason the §6.3 SIMD work matters.
 
 **Known limitation:** The fixed `w = 2π*bandFreq/sr` assumes constant-frequency
 sinusoids within the 1024-sample frame. See §5 for the intraframe smear problem
@@ -284,6 +369,46 @@ olaRing[ch][idx] += y * window[i] * 0.18f;
 The `0.18f` OLA scale factor normalises the Hann window overlap-add sum to
 unity gain for 75% overlap (4× overlap → scale = 1/(4 × 0.25) ≈ 0.25; the
 0.18 value is tuned empirically against the window energy integral).
+
+**Known gap — carrier bleed on silence.** The vocoder formula passes the
+carrier at 0.72 gain even with a zero envelope (`y = car × (0.72 + e ×
+...)`), so silence in produces a carrier drone out: measured max|out| =
+0.083 (−21.6 dBFS) with silence in, mix = 1, air = 0
+(`Tests/DSPVerify.cpp`). That fails the golden test "silence in → silence
+out". The fix is to remove the 0.72 floor (and recalibrate the level) or
+gate it on the envelope — a v1.0 decision, because it changes Ghost's
+level structure, not a silent edit.
+
+### 4.5 Carrier and Formant Scale (Ghost Engine)
+
+The Ghost engine does not share the filterbank carrier (§3.2). Its carrier
+is fixed — no sub oscillator, no `carrierBlend` parameter, 28% dry always:
+
+```cpp
+float sine  = sin(ph + 0.13*ch);
+float saw   = ph/π - 1.0f;
+float pulse = sine >= 0 ? 0.52f : -0.52f;
+return (0.46f*saw + 0.32f*sine + 0.18f*pulse) * 0.72f + dry * 0.28f;
+```
+
+Its formant shift is likewise its own scale — **10 bins per octave**,
+against the filterbank's 8 (§3.6):
+
+```cpp
+float shift = params.formantShift / 12.0f * 10.0f;
+float e = readEnv(env[ch], frozen[ch], t*(kDisplayBins-1) - shift, fr);
+```
+
+Both numbers are stated here as shipped, one per engine. See §3.6 for the
+geometric note (≈15.25 bands per octave) and the open unification decision.
+
+Transient Protect in this engine is the same first-difference gate and
+dry-transient return as the filterbank (§3.7), applied per sample in
+`process()` before the wet/dry mix.
+
+Mask in this engine is per-band, unlike the filterbank's broadband Mask
+(§3.5): each bin's carrier is ducked by its own envelope,
+`y = car × (1 − min(0.96, e × maskDepth × 3.2))`, up to 96% suppression.
 
 ---
 
@@ -499,3 +624,9 @@ analysis path.
 [10] R. Bristow-Johnson, personal correspondence, June 2026.
      (Context: intraframe sweep correction applicability to freeze-loop
      resynthesis vs. time-scaling in the SPEED vocoder implementation.)
+
+[11] A. Röbel, "A New Approach to Transient Processing in the Phase
+     Vocoder," in Proc. 6th Int. Conf. on Digital Audio Effects (DAFx-03),
+     London, Sep. 2003, pp. 344–349. — Cited only to state what Transient
+     Protect is not: per-peak transient detection. FreeVox8 implements no
+     such detection (§3.7).
