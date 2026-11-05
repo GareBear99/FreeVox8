@@ -1,0 +1,12 @@
+# Build outputs
+build/
+build-test/
+build-*/
+*.o
+*.a
+# JUCE
+JUCE/
+# macOS
+.DS_Store
+# Editor
+.vscode/

@@ -65,10 +65,10 @@ public:
 
         for (auto& b : bands)
         {
-            b.modLowpass.prepare(spec);
-            b.modHighpass.prepare(spec);
-            b.carLowpass.prepare(spec);
-            b.carHighpass.prepare(spec);
+            for (auto& f : b.modLowpass)    f.prepare(spec);
+            for (auto& f : b.modHighpass)   f.prepare(spec);
+            for (auto& f : b.carLowpass)    f.prepare(spec);
+            for (auto& f : b.carHighpass)   f.prepare(spec);
             b.env.fill(0.0f);
             b.frozenEnv.fill(0.0f);
         }
@@ -82,10 +82,10 @@ public:
     {
         for (auto& b : bands)
         {
-            b.modLowpass.reset();
-            b.modHighpass.reset();
-            b.carLowpass.reset();
-            b.carHighpass.reset();
+            for (auto& f : b.modLowpass)    f.reset();
+            for (auto& f : b.modHighpass)   f.reset();
+            for (auto& f : b.carLowpass)    f.reset();
+            for (auto& f : b.carHighpass)   f.reset();
             b.env.fill(0.0f);
             b.frozenEnv.fill(0.0f);
         }
@@ -173,7 +173,7 @@ public:
                 {
                     auto& b = bands[static_cast<size_t>(bi)];
                     const float shiftedEnv = readShiftedEnvelope(ch, static_cast<float>(bi) - formantBins, freezeOn);
-                    const float bandCarrier = b.carHighpass.processSample(ch, b.carLowpass.processSample(ch, carrier));
+                    const float bandCarrier = b.carHighpass[static_cast<size_t>(ch)].processSample(b.carLowpass[static_cast<size_t>(ch)].processSample(carrier));
                     const float consonantLift = 1.0f + air * highBandWeight(bi) * 1.6f;
                     const float shaped = bandCarrier * shiftedEnv * consonantLift * (2.15f + clarity * 4.25f);
                     vocoded += shaped * bandGain(bi);
@@ -228,10 +228,15 @@ public:
 private:
     struct Band
     {
-        juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> modLowpass;
-        juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> modHighpass;
-        juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> carLowpass;
-        juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> carHighpass;
+        // Per-channel mono IIR filters (not ProcessorDuplicator: the
+        // duplicator has no processSample() in JUCE 7 or 8, and this engine
+        // processes sample-by-sample, so one mono filter per channel is
+        // the correct object. 128 bands x 2 paths x 2 filters = 512
+        // instances per channel, as before.
+        std::array<juce::dsp::IIR::Filter<float>, kMaxChannels> modLowpass;
+        std::array<juce::dsp::IIR::Filter<float>, kMaxChannels> modHighpass;
+        std::array<juce::dsp::IIR::Filter<float>, kMaxChannels> carLowpass;
+        std::array<juce::dsp::IIR::Filter<float>, kMaxChannels> carHighpass;
         std::array<float, kMaxChannels> env {};
         std::array<float, kMaxChannels> frozenEnv {};
     };
@@ -257,10 +262,13 @@ private:
             const float hi = juce::jmax(lo + 18.0f, makeBandEdge(i + 1, nyquistSafe));
             auto hp = juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, lo, 0.707f);
             auto lp = juce::dsp::IIR::Coefficients<float>::makeLowPass (sr, juce::jmin(hi, nyquistSafe), 0.707f);
-            bands[static_cast<size_t>(i)].modHighpass.state = hp;
-            bands[static_cast<size_t>(i)].carHighpass.state = hp;
-            bands[static_cast<size_t>(i)].modLowpass.state  = lp;
-            bands[static_cast<size_t>(i)].carLowpass.state  = lp;
+            for (int ch = 0; ch < kMaxChannels; ++ch)
+            {
+                *bands[static_cast<size_t>(i)].modHighpass[static_cast<size_t>(ch)].coefficients = *hp;
+                *bands[static_cast<size_t>(i)].carHighpass[static_cast<size_t>(ch)].coefficients = *hp;
+                *bands[static_cast<size_t>(i)].modLowpass[static_cast<size_t>(ch)].coefficients  = *lp;
+                *bands[static_cast<size_t>(i)].carLowpass[static_cast<size_t>(ch)].coefficients  = *lp;
+            }
         }
     }
 
@@ -281,7 +289,7 @@ private:
         for (int bi = 0; bi < kNumBands; ++bi)
         {
             auto& b = bands[static_cast<size_t>(bi)];
-            const float bandMod = b.modHighpass.processSample(ch, b.modLowpass.processSample(ch, modulator));
+            const float bandMod = b.modHighpass[static_cast<size_t>(ch)].processSample(b.modLowpass[static_cast<size_t>(ch)].processSample(modulator));
             const float mag = std::sqrt(bandMod * bandMod + 1.0e-12f);
             auto& env = b.env[static_cast<size_t>(ch)];
             env = (mag > env) ? attackCoeff * env + (1.0f - attackCoeff) * mag

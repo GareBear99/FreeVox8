@@ -61,4 +61,10 @@ option(FREEVOX8_BUILD_TESTS "Build lightweight non-JUCE repo validation tests" O
 if (FREEVOX8_BUILD_TESTS)
     add_executable(FreeVox8_RepoAudit Tests/RepoAudit.cpp)
     target_compile_features(FreeVox8_RepoAudit PRIVATE cxx_std_17)
+    # DSP verification harness: links juce_dsp only (no GUI, no X11), so it
+    # builds and runs headless on Linux. Exercises both DSP engines.
+    add_executable(FreeVox8_DSPVerify Tests/DSPVerify.cpp)
+    target_include_directories(FreeVox8_DSPVerify PRIVATE Source/DSP)
+    target_link_libraries(FreeVox8_DSPVerify PRIVATE juce::juce_dsp)
+    target_compile_features(FreeVox8_DSPVerify PRIVATE cxx_std_17)
 endif()
