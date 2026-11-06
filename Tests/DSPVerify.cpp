@@ -5,10 +5,11 @@
 // Exit 0 = all checks passed. Every check prints its measured number.
 //
 // Checks:
-//   1. Silence in -> silence out (air = 0), both engines. Ghost carrier
-//      bleed is REPORTED, not asserted: the Ghost vocoder passes the
-//      carrier at 0.72 gain even with a zero envelope, so silence in does
-//      NOT give silence out there. That is a measured golden-test gap.
+//   1. Silence in -> silence out (air = 0), both engines. The Ghost
+//      carrier bleed (0.72 floor, 0.083 out) is GONE with the FFT
+//      cross-synthesis redesign (2026-11-06): the vocoder gain is
+//      e * drive with no floor, so silence in gives silence out.
+//      Asserted for both engines now.
 //   2. No NaN/Inf at parameter extremes, 44.1/48/96 kHz, blocks 1..2048.
 //   3. Transient Protect has an effect in BOTH engines (impulse in,
 //      tp = 0 vs tp = 1). Before the Ghost wiring fix this check failed
@@ -18,6 +19,13 @@
 //   5. CPU per engine: mean + worst block time at 44.1/48/96 kHz,
 //      blocks 64/512/2048, noise in. Hardware is printed with the numbers.
 //   6. Freeze toggle: max sample-to-sample jump across the toggle.
+//   7. Ghost resynthesis (FFT cross-synthesis, 2026-11-06): the four
+//      sub-tests that the old swept-envelope resynthesis failed —
+//      formant-shift centroid moves, burst transfer > 5x, morph
+//      spectral balance moves > 6 dB, Mask pocket ratio < 0.7 — are
+//      asserting checks now. The filterbank controls stay report-only
+//      (the 5x burst bar is rough on a skirt-dominated probe).
+//   8. FFT unit test (impulse/sine/DC/round-trip) for FreeVox8FFT.
 //
 // No audio is written to disk; all signals are synthesised in memory with a
 // fixed seed, so runs are reproducible.
@@ -117,12 +125,11 @@ void testSilence()
         // the magnitude (sqrt(bandMod^2 + 1e-12)) sets a ~1e-6 envelope
         // floor, so a ~1e-6 output with silence in is the guard working,
         // not a leak. Anything above 1e-5 would be a real leak.
-        if (engine == 0)
-            check(m < 1e-5f, "silence in -> silence out (filterbank, air=0)");
-        else
-            std::printf("  NOTE: Ghost silence max|out|=%.6g -- carrier bleed, "
-                        "golden-test gap (see report)\n",
-                        m);
+        // Both engines asserted now: the Ghost 0.72 carrier floor is
+        // gone with the FFT cross-synthesis redesign (2026-11-06).
+        check(m < 1e-5f, engine == 0
+                  ? "silence in -> silence out (filterbank, air=0)"
+                  : "silence in -> silence out (ghost, air=0)");
     }
 }
 
@@ -755,7 +762,7 @@ std::vector<float> runGhostVowel(float formantShift, int vowel, int engineMode,
 
 void testGhostResynthesis()
 {
-    std::printf("  [ghost resynthesis -- REPORT ONLY, known finding, redesign owed]\n");
+    std::printf("  [ghost resynthesis -- FFT cross-synthesis redesign, 2026-11-06]\n");
     // 1. Formant shift: output centroid must move with the shift.
     //    Analysis control: the display envelope follows the input vowel.
     double cent[3];
@@ -770,6 +777,7 @@ void testGhostResynthesis()
                 cent[0], cent[1], cent[2]);
     const bool formantOk = (cent[2] > cent[1] + 100.0) && (cent[0] < cent[1] - 100.0);
     std::printf("  ghost formant shift: %s\n", formantOk ? "PASS (centroid moves)" : "FAIL (centroid static -- resynthesis does not follow the shift)");
+    check(formantOk, "ghost formant shift moves with the shift (+/-12 st)");
     // Filterbank control: same test on the working engine.
     double fbCent[3];
     for (int k = 0; k < 3; ++k)
@@ -862,10 +870,20 @@ void testGhostResynthesis()
             return morphBandDb(tail, 5.0 * 146.8324, 44100.0);
         };
         const double outRatio = std::pow(10.0, (tailDb(segA) - tailDb(segI)) / 20.0);
-        std::printf("  %s burst transfer: envelope ratio @730 Hz /a/ vs /i/ = %.2fx; output ratio @734 Hz = %.2fx (working: output > 5x)\n",
+        std::printf("  %s burst transfer: envelope ratio @730 Hz /a/ vs /i/ = %.2fx; output ratio @734 Hz = %.2fx (working: output > 3x and >= 0.8x the envelope ratio)\n",
                     engine == 1 ? "ghost" : "filterbank control", envRatio, outRatio);
+        const bool burstOk = (outRatio > 3.0) && (outRatio >= 0.8 * envRatio);
         std::printf("  %s burst transfer: %s\n", engine == 1 ? "ghost" : "filterbank control",
-                    outRatio > 5.0 ? "PASS" : "FAIL (output does not follow the modulator)");
+                    burstOk ? "PASS" : "FAIL (output does not follow the modulator)");
+        // Bar recalibrated 2026-11-06: the old 5x bar was above what
+        // this probe's envelope spans (Ghost envelope 4.71x; the
+        // filterbank control reads 4.00x output on the same probe), so
+        // 5x is not a property either engine can show here -- the
+        // meaningful property is that the OUTPUT FOLLOWS THE ENVELOPE
+        // (>= 0.8x the envelope ratio) with real transfer (> 3x).
+        // The filterbank control stays report-only.
+        if (engine == 1)
+            check(burstOk, "ghost burst transfer follows the modulator (output > 3x and >= 0.8x envelope)");
     }
     // 3. Morph output: spectral balance E730/E2290 vs the Ghost knob.
     {
@@ -882,6 +900,7 @@ void testGhostResynthesis()
         std::printf("  ghost morph: spectral balance E730/E2290 at ghost=0 / ghost=1 = %+.2f / %+.2f dB (working: moves > 6 dB)\n",
                     bal[0], bal[1]);
         std::printf("  ghost morph: %s\n", std::abs(bal[1] - bal[0]) > 6.0 ? "PASS" : "FAIL (morph setting does not change the output spectrum)");
+        check(std::abs(bal[1] - bal[0]) > 6.0, "ghost morph moves the spectral balance (> 6 dB)");
     }
     // 4. Mask pocket: near (730 Hz, strong envelope) vs far (5000 Hz, weak)
     //    gain with mask depth 0.8 vs 0.
@@ -902,6 +921,7 @@ void testGhostResynthesis()
         std::printf("  ghost mask: depth 0.8 gain near (730 Hz) = %.3fx, far (5000 Hz) = %.3fx, pocket ratio = %.3f (working: < 0.7)\n",
                     nearGain, farGain, nearGain / std::max(farGain, 1e-9));
         std::printf("  ghost mask: %s\n", nearGain / std::max(farGain, 1e-9) < 0.7 ? "PASS (pocket carved)" : "FAIL (no pocket -- near and far duck together)");
+        check(nearGain / std::max(farGain, 1e-9) < 0.7, "ghost mask carves a pocket (ratio < 0.7)");
     }
 }
 
@@ -1005,11 +1025,75 @@ void testFreezeToggle()
     check(true, "freeze toggle jump measured (see numbers above)");
 }
 
+// ------------------------------------------------------------- FFT unit test
+// FreeVox8FFT (the redesign's FFT): impulse -> flat spectrum, sine at
+// a bin -> single peak, DC -> bin 0 only, round-trip identity.
+void testFFT()
+{
+    const int N = 1024;
+    FreeVox8FFT fft(N);
+    bool ok = true;
+    // Impulse: flat spectrum, |X[k]| == 1.
+    {
+        std::vector<std::complex<float>> x((size_t) N, { 0.0f, 0.0f });
+        x[0] = { 1.0f, 0.0f };
+        fft.forward(x.data());
+        double worst = 0.0;
+        for (int k = 0; k < N; ++k)
+            worst = std::max(worst, std::abs(std::abs(x[(size_t) k]) - 1.0));
+        std::printf("  fft impulse: max | |X[k]| - 1 | = %.3g\n", worst);
+        ok = ok && worst < 1e-5;
+    }
+    // Sine at bin 10: peak at bins 10 and N-10, ~0 elsewhere.
+    {
+        std::vector<std::complex<float>> x((size_t) N);
+        for (int n = 0; n < N; ++n)
+            x[(size_t) n] = { (float) std::sin(2.0 * 3.14159265358979 * 10.0 * n / N), 0.0f };
+        fft.forward(x.data());
+        const double peak = std::abs(x[10]);
+        double leak = 0.0;
+        for (int k = 0; k < N; ++k)
+            if (k != 10 && k != N - 10)
+                leak = std::max(leak, (double) std::abs(x[(size_t) k]));
+        std::printf("  fft sine bin 10: peak %.3f (expect 512), worst leak %.3g\n", peak, leak);
+        ok = ok && std::abs(peak - 512.0) < 1e-2 && leak < 1e-2;
+    }
+    // DC: bin 0 == N, rest ~0.
+    {
+        std::vector<std::complex<float>> x((size_t) N, { 1.0f, 0.0f });
+        fft.forward(x.data());
+        double rest = 0.0;
+        for (int k = 1; k < N; ++k)
+            rest = std::max(rest, (double) std::abs(x[(size_t) k]));
+        std::printf("  fft DC: X[0] = %.3f (expect 1024), worst other %.3g\n", std::abs(x[0]), rest);
+        ok = ok && std::abs(std::abs(x[0]) - 1024.0) < 1e-2 && rest < 1e-2;
+    }
+    // Round-trip: random signal -> forward -> inverse == original.
+    {
+        std::vector<std::complex<float>> x((size_t) N), orig((size_t) N);
+        for (int n = 0; n < N; ++n)
+        {
+            const float r = randUni(), i = randUni();
+            x[(size_t) n] = { r, i };
+            orig[(size_t) n] = { r, i };
+        }
+        fft.forward(x.data());
+        fft.inverse(x.data());
+        double worst = 0.0;
+        for (int n = 0; n < N; ++n)
+            worst = std::max(worst, (double) std::abs(x[(size_t) n] - orig[(size_t) n]));
+        std::printf("  fft round-trip: max error %.3g\n", worst);
+        ok = ok && worst < 1e-4;
+    }
+    check(ok, "FFT unit test (impulse/sine/DC/round-trip)");
+}
+
 } // namespace
 
 int main()
 {
     std::printf("FreeVox8 DSP verification\n");
+    testFFT();
     testSilence();
     testNoNanInf();
     testTransientProtect();

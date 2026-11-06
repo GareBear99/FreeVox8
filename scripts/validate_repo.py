@@ -44,7 +44,7 @@ if "kNumMacroBands = 128" not in config:
     sys.exit(1)
 
 dsp = (root / "Source/DSP/FreeVox8DSP.h").read_text(errors="ignore")
-for needle in ["kNumBands = 128", "FreeVox8SpectralEngine", "engineMode", "buildFixedBandFilters", "makeBandEdge", "readShiftedEnvelope", "transientProtect", "stereoWidth", "quality", "process("]:
+for needle in ["#define FREEVOX8_NUM_BANDS 128", "FreeVox8SpectralEngine", "engineMode", "buildFixedBandFilters", "makeBandEdge", "readShiftedEnvelope", "transientProtect", "stereoWidth", "quality", "process("]:
     if needle not in dsp:
         print(f"DSP expected marker missing: {needle}")
         sys.exit(1)
@@ -54,7 +54,7 @@ for banned in ["malloc", "free(", "fstream", "ofstream", "ifstream", "std::threa
         sys.exit(1)
 
 spectral = (root / "Source/DSP/FreeVox8SpectralEngine.h").read_text(errors="ignore")
-for needle in ["kFftSize = 1024", "kHopSize = 256", "renderFrame", "analyseBins", "Spectral Ghost 1024"]:
+for needle in ["kFftSize = 1024", "kHopSize = 256", "renderFrame", "analyseRing", "Spectral Ghost 1024", "FreeVox8FFT"]:
     if needle not in spectral:
         print(f"Spectral backend marker missing: {needle}")
         sys.exit(1)

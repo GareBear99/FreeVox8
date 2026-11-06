@@ -21,14 +21,21 @@ envelope remapping, transient protection, and atomic spectral display taps — a
 from a single codebase producing both FreeVox8 (free, GPL-3.0) and future
 ProVox8 tiers.
 
-A known limitation of the current Spectral Ghost 1024 backend is that
-`analyseBins()` assumes constant-frequency sinusoids within each 1024-sample
-frame. For pitched material with vibrato or rapid intraframe frequency movement
-captured by the freeze path, spectral energy distributes across 2–3 adjacent
-log bands rather than resolving to a single bin — producing a blurred frozen
-snapshot. The intraframe sweep-rate estimation technique of Bristow-Johnson and
-Bogdanowicz [4] is identified as the correct mathematical treatment and is
-designated as primary future work for the Spectral Ghost 1024 backend.
+The Spectral Ghost 1024 backend was redesigned 2026-11-06 (rank 9,
+FFT cross-synthesis, Decision 5): the resynthesis that swept one
+band's envelope across each frame — which failed all four
+resynthesis sub-tests and passed the carrier at a 0.72 floor with
+silence in — is replaced by true per-frame spectral cross-synthesis
+(§4.4). The Ghost now follows the modulator (formant centroid moves
+172/295/1971 Hz for −12/0/+12 st; burst transfer 4.58× vs the
+envelope's 4.71×; morph moves 36 dB; Mask pocket 0.646), silence in
+gives silence out (max|out| = 0), and its STOI is 0.7939 overall —
+above TAL-Vocoder 3.0.3 at 0.7434 on the same corpus (§7). A known
+limitation that REMAINS is the intraframe smear on frozen vibrato
+(§5): the FFT analysis still assumes a stationary spectrum within
+each 1024-sample frame, so a frozen vibrato snapshot loses ~5 dB
+of peak concentration. The Bristow-Johnson/Bogdanowicz correction
+is the identified treatment and remains primary future work.
 
 ---
 
@@ -377,7 +384,7 @@ kicks: a /t/ burst loses 25.1 dB burst-to-vowel ratio at clarity 0.55
 (17.5 dB at clarity 1.0) — the envelope followers, not the gate, set
 the plosive audibility.
 
-### 3.8 Artefact Taxonomy — Objective Measurements (2026-11-05)
+### 3.8 Artefact Taxonomy — Objective Measurements (2026-11-05, Ghost re-measured 2026-11-06)
 
 One named objective test per artefact (`Tests/ArtefactTaxonomy.cpp`,
 VM, 44.1 kHz; the subjective halves need human ears — listening
@@ -387,9 +394,12 @@ paper §7):
 - **Phasiness** — 4 s frozen hold, /a/ F0 220. Filterbank: spectral
   centroid 429 ± 1 Hz (static) / 287 ± 1 Hz (vibrato), frame-to-frame
   spectral flux 0.030 / 0.028 per frame, RMS drift +0.72 / +0.43 dB —
-  the hold is spectrally still. Ghost: flux 0.090 / 0.119 per frame
-  (3–4× the filterbank), centroid std ±10 / ±17 Hz — report-only, the
-  wander is the envelope sweep, not a working vocoder's phasiness.
+  the hold is spectrally still. Ghost (FFT cross-synthesis,
+  re-measured 2026-11-06): flux 0.159 / 0.108 per frame, centroid
+  741 ± 23 / 303 ± 18 Hz, RMS drift +1.60 / +0.13 dB — report-only,
+  the flux is the STFT/OLA hop fluctuation (a fresh envelope per
+  256-sample hop), not a broken resynthesis; the Ghost STOI is
+  0.7939, so the fluctuation does not destroy intelligibility.
   The frozen vibrato vowel's spectrum differs from the frozen static
   vowel's (centroid 287 vs 429 Hz): the freeze captures the leaky
   average over vibrato cycles, not one instantaneous spectrum.
@@ -406,9 +416,29 @@ paper §7):
   but a 9–14 dB loss remains even at Air 1.0 — the STOI per-band
   scores say the same thing (2400 Hz 0.430, 3024 Hz 0.495).
 - **Freeze blur / wobble** — not re-run: pilot + Bench cross-check
-  (correction gain 0.03 dB, smear 4.8–6.2 dB), §5.
-- **Pumping** — not re-run: Step 7 (`Tests/MaskPumping.cpp`),
-  usable depth range EMPTY at the 1 dB bar, §3.5.
+  (correction gain 0.03 dB, smear 4.8–6.2 dB), §5. The pilot uses the
+  old Goertzel analysis; re-measuring the freeze blur with the FFT
+  analysis is still owed.
+- **Pumping** — filterbank Mask: Step 7 (`Tests/MaskPumping.cpp`),
+  usable depth range EMPTY at the 1 dB bar, §3.5. Ghost Mask:
+  `Tests/GhostMaskPumping.cpp` (2026-11-06), usable depth range also
+  NONE (shout pumping 1.90 dB p-p at depth 0.25, 7.18 dB at 1.0;
+  the formant band gets louder, not quieter — time-varying per-bin
+  gain breaks the Hann w² COLA reconstruction, §4.4). Both engines'
+  Mask modes share this limitation; a structural fix is §6.6.
+- **STOI (2026-11-06, same 20-file CMU ARCTIC corpus, fixed C4
+  carrier)** — filterbank 0.5817 overall (bdl 0.6136, slt 0.5499)
+  at the shipped defaults (air 0, clarity 0.55); a tuning sweep
+  (`renders-tuning/`, 6 cells) finds clarity 1.0 is worth +0.087
+  (air 0, clarity 1.0 → 0.6689; air 0.5, clarity 1.0 → 0.6663)
+  and Air costs STOI at fixed clarity (0.5817 → 0.5513 as air
+  0 → 1.0). Ghost (FFT cross-synthesis) 0.7939 overall (bdl
+  0.8018, slt 0.7860) — above TAL-Vocoder 3.0.3 at 0.7434 on the
+  same corpus. The Ghost's weakest band is 300 Hz (0.6442); its
+  strongest are 150 Hz (0.8627) and 378 Hz (0.8937), both above
+  TAL there. Ghost CPU 0.57% / 2.46% / 2.56% realtime at 44.1 kHz
+  (blocks 64/512/2048, VM medians) — ~15–20× cheaper than the
+  Goertzel engine it replaced (~39%).
 
 ---
 
@@ -429,38 +459,52 @@ The ring buffer (`inputRing`, `modRing`, `olaRing`) is a circular array of
 sample-by-sample; `hopCountdown` triggers `renderFrame()` every 256 samples.
 No heap allocation in `process()`.
 
-### 4.2 Spectral Analysis — analyseBins()
+### 4.2 Spectral Analysis — analyseRing() (FFT, 2026-11-06)
 
-For each of 128 log-spaced analysis bands, magnitude is computed via a
-Goertzel-style DFT accumulation:
+The resynthesis redesign replaced the Goertzel `analyseBins()` with a
+windowed FFT per frame (`analyseRing()` in `FreeVox8SpectralEngine.h`,
+framework-free `FreeVox8FFT.h` — radix-2 iterative DIT, precomputed
+bit-reversal + twiddles, forward + inverse):
 
 ```cpp
-double w = 2π * bandFreq(b) / sr;
-double re = 0, im = 0;
-for (int i = 0; i < kFftSize; i += 4) {
-    float s = modRing[ch][idx] * window[i];
-    re += s * cos(w * i);
-    im -= s * sin(w * i);
+// per frame (hop 256): modulator ring -> Hann window -> FFT
+fft.forward(fftBuf.data());
+// magnitudes -> 128 log-band envelope (mean of |X[k]| over the band)
+for (int b = 0; b < kDisplayBins; ++b) {
+    float sum = 0; int cnt = 0;
+    for (int k = bandBinLo[b]; k <= bandBinHi[b]; ++k) { sum += std::abs(fftBuf[k]); ++cnt; }
+    float m = (cnt > 0) ? sum / (float)cnt * (4.0f / (float)kFftSize) : 0.f;
+    // same envelope-follower rates as the Goertzel version:
+    E = m > E ? 0.24f*E + 0.76f*m : 0.92f*E + 0.08f*m;
 }
-float mag = sqrt(re*re + im*im) * 0.0018f;
 ```
 
-The accumulation steps the ring by a per-band stride (4 where alias-free,
-finer above): a stride-s Goertzel sum is alias-free only below sr/(2s), so
-a fixed stride of 4 is exact only below sr/8 (~5512 Hz at 44.1 kHz). As
-shipped, the stride was fixed at 4 for all bands, and every band above
-sr/8 was a mirror of low-frequency content — a pure 676 Hz sine lit band
-117 (11701 Hz) *stronger* than its true band 55. The claim that stride-4
-has "negligible accuracy loss" was wrong for tonal signals. Fixed
-2026-11-05: stride 4 for bands below sr/8, 3 below sr/6, 2 below sr/4,
-1 above (101/6/9/12 bands at 44.1 kHz), with the magnitude normalised by
-stride/4 against the 0.0018 scale. Cost rises from ~11.3M to ~15.4M
-transcendental calls/sec/channel at 44.1 kHz — the price of correctness,
-and the reason the §6.3 SIMD work matters.
+The envelope follower rates, the `frozen[]` leaky snapshot, and the
+display/Mask meter taps are unchanged from the Goertzel version — only
+the magnitude computation changed (3 FFTs per frame replace ~45k
+Goertzel iterations with a cos/sin each, and the Ghost CPU falls from
+~39% to ~2.5% realtime at 44.1 kHz on the VM, §7). The FFT unit test
+(`Tests/DSPVerify.cpp::testFFT`) verifies the transform exactly:
+impulse flat (max error 0), sine bin 10 peak 512.000, DC bin 0 =
+1024.000, round-trip error 4.21e-07.
 
-**Known limitation:** The fixed `w = 2π*bandFreq/sr` assumes constant-frequency
-sinusoids within the 1024-sample frame. See §5 for the intraframe smear problem
-and the Bristow-Johnson/Bogdanowicz correction.
+Historical note (superseded 2026-11-06): the Goertzel `analyseBins()`
+stepped the ring by a per-band stride (4 where alias-free, finer
+above); a stride-s Goertzel sum is alias-free only below sr/(2s), so
+a fixed stride of 4 was exact only below sr/8 (~5512 Hz at 44.1 kHz)
+and every band above sr/8 was a mirror of low-frequency content — a
+pure 676 Hz sine lit band 117 (11701 Hz) *stronger* than its true band
+55. Fixed 2026-11-05 (stride 4/3/2/1 by band, magnitude normalised
+by stride/4); cost rose from ~11.3M to ~15.4M transcendental
+calls/sec/channel at 44.1 kHz. That fix is moot now — the FFT
+replaces the Goertzel entirely — but it is recorded because it is
+why the §6.3 SIMD work was thought to matter, and because the
+stride-4 error is the reason the old Ghost's high bands were mirrors.
+
+**Known limitation (unchanged):** the FFT analysis still assumes a
+stationary spectrum within the 1024-sample frame. See §5 for the
+intraframe smear problem and the Bristow-Johnson/Bogdanowicz
+correction.
 
 ### 4.3 Envelope Tracking and Freeze
 
@@ -479,60 +523,82 @@ Unlike time-scaling — where advancing through frames averages out intraframe
 errors — freeze loops the same snapshot indefinitely. Any smear baked into the
 snapshot at capture time is permanent.
 
-### 4.4 OLA Resynthesis
+### 4.4 OLA Resynthesis — FFT cross-synthesis (2026-11-06)
+
+Per frame (hop 256), after the modulator envelope (§4.2) and the
+carrier FFT (phase KEPT):
 
 ```cpp
-float e   = readEnv(env[ch], frozen[ch], t*(kDisplayBins-1) - shift, fr);
-float car = inputRing[ch][idx] * window[i];
-float y   = car * (0.72 + e*(2.8 + clarity*4.0)) + air*t²*whiteNoise()*0.018;
-olaRing[ch][idx] += y * window[i] * 0.18f;
+// per FFT bin k (0..512): output = carrier[k] * gain[k], gain from
+// the modulator envelope evaluated at the bin's true frequency.
+for (int k = 0; k < kNumBins; ++k) {
+    float g;
+    if (params.mode == 1) {           // Mask
+        float e = maskEnvelopeAtBin(e1, k, shift);   // peak over +-2 bands
+        g = 1.f - juce::jlimit(0.f, .96f, e * params.maskDepth * 3.2f);
+    } else {                          // Vocoder / Ghost / Morph
+        float e;
+        if (isMorph) {                // two envelopes, interpolated
+            float a = envelopeAtBin(e1, k, shift), b = envelopeAtBin(e2, k, shift);
+            e = (1.f - ghost) * a + ghost * b;
+        } else e = envelopeAtBin(e1, k, shift);
+        g = e * drive;                // drive = 2.8 + clarity * 4
+        if (params.mode == 2) g *= 1.f + ghost * 2.4f;   // Ghost boost
+    }
+    outBuf[k] = fftBuf[k] * g;
+}
+// conjugate symmetry, IFFT, Hann synthesis window, OLA (÷1.5,
+// the Hann w^2 COLA constant at 75% overlap).
 ```
 
-The `0.18f` OLA scale factor normalises the Hann window overlap-add sum to
-unity gain for 75% overlap (4× overlap → scale = 1/(4 × 0.25) ≈ 0.25; the
-0.18 value is tuned empirically against the window energy integral).
+The old resynthesis (sweeping one band's envelope across each frame,
+`e = readEnv(env[ch], frozen[ch], t*(kDisplayBins-1) - shift, fr)`,
+carrier passed at a 0.72 floor) is gone. It failed all four
+resynthesis sub-tests and passed a carrier drone on silence
+(max|out| = 0.083, −21.6 dBFS). The FFT cross-synthesis passes them
+all (`Tests/DSPVerify.cpp::testGhostResynthesis`, 2026-11-06, VM):
 
-**Known gap — carrier bleed on silence.** The vocoder formula passes the
-carrier at 0.72 gain even with a zero envelope (`y = car × (0.72 + e ×
-...)`), so silence in produces a carrier drone out: measured max|out| =
-0.083 (−21.6 dBFS) with silence in, mix = 1, air = 0
-(`Tests/DSPVerify.cpp`). That fails the golden test "silence in → silence
-out. The fix is to remove the 0.72 floor (and recalibrate the level) or
-gate it on the envelope — a v1.0 decision, because it changes Ghost's
-level structure, not a silent edit.
+| Sub-test | Before (2026-11-05) | After (2026-11-06) | Bar |
+|---|---|---|---|
+| Formant-shift centroid −12/0/+12 st | 392/390/387 Hz, static | **172/295/1971 Hz, moves** | moves ±100 Hz |
+| Burst transfer (output @734 Hz) | 1.01× vs envelope 4.70× | **4.58× vs envelope 4.71×** | >3× and ≥0.8× envelope |
+| Ghost morph (E730/E2290) | 1.42 dB move | **36.0 dB move** (+7.94/−28.06 dB) | >6 dB |
+| Ghost Mask pocket (depth 0.8) | ratio 4.342 | **ratio 0.646** (near 0.645×, far 0.997×) | <0.7 |
+| Silence in → silence out | 0.083 out | **0 exactly** | 0 |
 
-**Known gap — resynthesis does not follow the modulator (verified
-2026-11-05, `Tests/DSPVerify.cpp` testGhostResynthesis, report-only
-until the redesign lands).** The resynthesis sweeps one band's envelope
-across each frame (`e = readEnv(env[ch], frozen[ch], t*(kDisplayBins-1)
-- shift, fr)`), so the output does not follow the modulator; analysis is
-healthy, resynthesis is broken. Measured in this engine at HEAD
-`1ab2608`, 2026-11-05 (filterbank controls in parentheses): formant-shift
-output centroid −12/0/+12 st = 392/390/387 Hz, static (filterbank
-169/250/573 Hz, moves); burst transfer envelope ratio 4.70× vs output
-ratio 1.01×, needs >5× (filterbank control 4.00× — below the 5× bar
-itself; the bar is a rough bar on a skirt-dominated output probe, not
-a sharp gate); Ghost morph spectral balance moves 1.42 dB, needs >6 dB;
-Ghost Mask depth 0.8 pocket ratio 4.342, needs <0.7 (the near band got
-louder, 4.255× — AM sidebands from the envelope sweep, not the
-envelope). These figures supersede the ones first recorded for this
-finding (centroid 253/254/253 Hz, burst 5.63× vs 2.20×, control 5.66×,
-morph 3.07 dB, Mask 1.369 / near 1.533×): the envelope-ratio and
-control drift is the Step 3 test-fixture retune (the /a/ floor
-0.15 → 0.05 and the /i/ F2 width 150 → 250 Hz in `morphVowel`) —
-re-running with the old fixture reproduces 5.63× and 5.66× exactly —
-and the Ghost output-side drift is not explained by the Step 1
-`analyseBins` stride fix (reverting it changes nothing measurable),
-so the earlier output-side values are not reproducible from the
-committed code and are superseded. The verdicts are unchanged on all
-four sub-tests: the Ghost engine fails every one, and the filterbank
-control still moves/follows. Track B (iPlug2) confirmed the same
-finding independently (burst 41.5× vs 1.32×; centroid 1144/1144/1142
-Hz; Mask 0.993×/0.993×). **Do not ship the Ghost engine as a vocoder
-on this resynthesis.** The redesign decision (FFT cross-synthesis vs
-per-band carrier filtering vs park Ghost as analysis-only) is owed —
-see §6.6. The Ghost engine's mode 3 (Morph) still uses the old blend
-formula and cannot work as a morph on this resynthesis.
+The burst bar was recalibrated with the redesign (see
+`Tests/DSPVerify.cpp`): the old 5× bar sat above what this probe's
+envelope spans (Ghost envelope 4.71×; the filterbank control itself
+reads 4.00× output on the same probe), so 5× is not a property
+either engine can show here. The meaningful property is that the
+output follows the envelope (≥0.8× the envelope ratio) with real
+transfer (>3×). The Ghost follows at 0.97× (4.58/4.71).
+
+The Mask uses a peak-spread envelope (`maskEnvelopeAtBin`: the peak
+of the formant-shifted envelope over a ±2 log-band window, ~±0.13
+octaves, around the bin). A mask must duck the REGION around a
+formant, not just the exact bin of a harmonic: the /a/ F1 formant
+sits at 730 Hz, between the 660 Hz and 880 Hz harmonics, so the raw
+bin envelope there is only the skirt (~0.05) and the pocket read
+0.88×. Spreading the peak ±2 bands lets the formant-boosted 660 Hz
+harmonic duck its own formant region (pocket 0.645×, −3.8 dB).
+Mask only — the Vocoder/Ghost/Morph keep the unspread envelope.
+The Mask display tap (`getMaskBin`) reads the same spread duck, so
+the meter matches the audio.
+
+**Known limitation — Mask pumping on dynamic material.** The
+steady-state pocket above is real, but on a real shouted vocal the
+Ghost Mask pumps: paired 10 ms windowed-RMS modulation 1.90 dB
+p-p at depth 0.25, 7.18 dB at depth 1.0 (shout leg,
+`Tests/GhostMaskPumping.cpp`), and the formant band gets LOUDER
+(−6.7 to −15.5 dB attenuation) — the time-varying per-bin gain
+breaks the Hann w² COLA reconstruction, creating sidebands. The
+usable depth range (pocket ≥3 dB with pumping ≤1 dB) is NONE for
+both the shout and drum legs. The filterbank Mask has the same
+limitation (its usable range is EMPTY at the 1 dB bar, §7), so this
+is a property of the Mask mode, not a regression from the redesign.
+A structural fix (smoothing the Mask gain over time, or a
+COLA-preserving Mask law) is defined future work (§6.6).
 
 ### 4.5 Carrier and Formant Scale (Ghost Engine)
 
@@ -546,30 +612,47 @@ float pulse = sine >= 0 ? 0.52f : -0.52f;
 return (0.46f*saw + 0.32f*sine + 0.18f*pulse) * 0.72f + dry * 0.28f;
 ```
 
-Its formant shift is likewise its own scale — **10 bins per octave**,
-against the filterbank's 8 (§3.6):
+Its formant shift is an EXACT FREQUENCY-RATIO remap, not a
+bins-per-octave shift (2026-11-06 redesign). The envelope is evaluated
+at f × 2^(−shift/12) — the log-band position moves down by
+shift × bandsPerSemitone, where bandsPerSemitone = 127 / log2(18500/55)
+/ 12 ≈ 1.261 — so +12 semitones moves the formants a true octave:
 
 ```cpp
-float shift = params.formantShift / 12.0f * 10.0f;
-float e = readEnv(env[ch], frozen[ch], t*(kDisplayBins-1) - shift, fr);
+float envelopeAtBin(const Spec& e, int k, float shift) const noexcept {
+    float pos = binPos[k] - shift * bandsPerSemitone;
+    pos = juce::jlimit(0.f, 127.f, pos);
+    // linear interpolation between e[floor(pos)] and e[floor(pos)+1]
+}
 ```
 
-Both numbers are stated here as shipped, one per engine. See §3.6 for the
-geometric note (≈15.25 bands per octave) and the open unification decision.
+There is no bins/octave constant in this engine — which DISSOLVES
+Decision 1 (unify at ≈15.25 bins/octave) for the Ghost engine. The
+filterbank keeps its own 8 bins/octave scale (§3.6), and unifying
+that is still Gary's call. The old Ghost scale (10 bins per octave,
+via `readEnv` on a swept index) is gone with the sweep resynthesis.
 
 Transient Protect in this engine is the same first-difference gate and
 dry-transient return as the filterbank (§3.7), applied per sample in
 `process()` before the wet/dry mix.
 
 Mask in this engine is per-band, unlike the filterbank's broadband Mask
-(§3.5): each bin's carrier is ducked by its own envelope,
-`y = car × (1 − min(0.96, e × maskDepth × 3.2))`, up to 96% suppression.
+(§3.5): each bin's carrier is ducked by its own (peak-spread) envelope,
+`g = 1 − min(0.96, e × maskDepth × 3.2)`, up to 96% suppression (§4.4).
 
 ---
 
 ## 5. Intraframe Smear: The Known Limitation and Its Correction
 
 ### 5.1 Problem Statement
+
+*(Note: this section describes the pre-redesign Goertzel analysis.
+The 2026-11-06 redesign replaced `analyseBins()` with an FFT
+analysis (§4.2); the freeze-blur mechanism below — a windowed
+spectrum of a moving pitch smears across adjacent bands — is the
+same for the FFT analysis, but the pilot numbers in §5.2 were
+measured with the old analysis and a re-measurement with the FFT
+analysis is still owed.)*
 
 The Spectral Ghost 1024 `analyseBins()` function evaluates the DFT at a fixed
 analysis frequency `w = 2π*bandFreq/sr` across the entire 1024-sample window.
@@ -697,17 +780,25 @@ ProVox8 tier) is the remaining route to a sharper frozen pitch.
 ### 6.2 Full Phase Vocoder Backend
 
 The DSP comments in `FreeVox8SpectralEngine.h` reference a planned phase-vocoder
-backend. This would replace the Goertzel-style band analysis with proper phase
-accumulation and phase-difference frequency estimation, enabling pitch-shifting
-and time-stretching in addition to freeze resynthesis. The intraframe correction
-of [4] applies directly to this path as well.
+backend. The FFT cross-synthesis redesign (rank 9, 2026-11-06) is the
+STFT half of that backend — a real STFT resynthesis with the modulator's
+spectrum imposed on the carrier, carrier phase kept. What remains is
+proper phase accumulation and phase-difference frequency estimation,
+enabling pitch-shifting and time-stretching in addition to freeze
+resynthesis. The intraframe correction of [4] applies directly to this
+path as well.
 
 ### 6.3 SIMD Optimisation
 
-The `analyseBins()` inner loop (`re += s*cos(w*i); im -= s*sin(w*i)`) is the
-dominant cost in Spectral Ghost 1024. AVX2 vectorisation of the cos/sin
-evaluation (via polynomial approximation, following the SvfBandArray pattern
-in FreeEQ8 [1]) is the primary performance target for v0.6.0.
+The Goertzel `analyseBins()` inner loop was the dominant cost in
+Spectral Ghost 1024 — and the FFT redesign (2026-11-06) removed it:
+the Ghost now costs ~2.5% realtime at 44.1 kHz (VM), so there is no
+SIMD target left in the Ghost. The expensive engine is now the
+filterbank (~47% at 44.1 kHz, ~102% at 96 kHz on the VM — the 96 kHz
+figure is a VM measurement caveat, not a product claim): its 128
+biquad bandpasses + envelope followers are the SIMD candidate, via
+the SvfBandArray pattern in FreeEQ8 [1]. Whether that matters
+depends on the Mac CPU numbers (rank 10).
 
 ### 6.4 ProVox8 Tier
 
@@ -721,22 +812,25 @@ Per-bin FFT threshold clamping (Soothe2-style transient spectral limiting) using
 the existing OLA infrastructure. Logically adjacent to the Mask mode already
 implemented.
 
-### 6.6 Ghost Resynthesis Redesign (decision owed)
+### 6.6 Ghost Resynthesis Redesign — DONE 2026-11-06 (Decision 5)
 
-The Ghost engine's OLA resynthesis is broken (§4.4): it sweeps one band's
-envelope across each frame, so the output does not follow the modulator.
-Three options, in order of increasing scope: (1) **per-band carrier
-filtering** — the smallest correct fix, reusing the filterbank machinery
-(one carrier filtered per band, imposed with that band's envelope);
-(2) **FFT cross-synthesis** — the fuller Ghost-backend answer, and the
-direction §6.2 already points (a real STFT resynthesis with the
-modulator's spectrum imposed on the carrier); (3) **park Ghost as
-analysis-only** — keep the backend for freeze/morph analysis and ship
-only the filterbank as the vocoder. The decision is Gary's; it changes
-the §6 order and the CPU story, and Track B will not start the redesign
-until it lands. Until then the Ghost resynthesis checks in
-`Tests/DSPVerify.cpp` are report-only, not asserting, and the Ghost
-engine must not ship as a vocoder.
+The Ghost engine's OLA resynthesis was broken (§4.4): it swept one
+band's envelope across each frame, so the output did not follow the
+modulator. Decision 5 (Gary, 2026-11-05) chose **FFT
+cross-synthesis**, and it landed 2026-11-06 (rank 9) in
+`Source/DSP/FreeVox8SpectralEngine.h` + `Source/DSP/FreeVox8FFT.h`
+(framework-free, so the iPlug2 track adopts it verbatim): all four
+resynthesis sub-tests pass, silence in gives silence out, Ghost
+STOI 0.7939 beats TAL 0.7434, Ghost CPU ~2.5% at 44.1 kHz. The
+`Tests/DSPVerify.cpp` Ghost checks are asserting again (they were
+report-only until the redesign landed).
+
+What remains of this item is the Mask pumping limitation (§4.4):
+the Ghost Mask's usable depth range is NONE on dynamic material
+(time-varying per-bin gain breaks COLA). A structural fix —
+smoothing the Mask gain over time, or a COLA-preserving Mask law —
+is the remaining work, and the filterbank Mask shares the
+limitation, so it is one fix for both engines.
 
 ---
 

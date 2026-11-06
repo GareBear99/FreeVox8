@@ -221,16 +221,23 @@ int main(int argc, char** argv)
 {
     if (argc < 4)
     {
-        std::fprintf(stderr, "usage: %s <in.wav> <out.wav> <clean44.wav> [--note N] [--sr SR]\n", argv[0]);
+        std::fprintf(stderr, "usage: %s <in.wav> <out.wav> <clean44.wav> [--note N] [--sr SR] [--engine 0|1] [--air X] [--clarity X]\n", argv[0]);
         return 2;
     }
-    int note = 60, sr = 44100;
+    int note = 60, sr = 44100, engine = 0;
+    float air = 0.0f, clarity = 0.55f;
     for (int i = 4; i < argc; ++i)
     {
         if (std::strcmp(argv[i], "--note") == 0 && i + 1 < argc)
             note = std::atoi(argv[++i]);
         else if (std::strcmp(argv[i], "--sr") == 0 && i + 1 < argc)
             sr = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--engine") == 0 && i + 1 < argc)
+            engine = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--air") == 0 && i + 1 < argc)
+            air = static_cast<float>(std::atof(argv[++i]));
+        else if (std::strcmp(argv[i], "--clarity") == 0 && i + 1 < argc)
+            clarity = static_cast<float>(std::atof(argv[++i]));
     }
 
     std::vector<float> in;
@@ -241,22 +248,22 @@ int main(int argc, char** argv)
         return 1;
     }
     const std::vector<float> clean = resampleLinear(in, srIn, sr);
-    std::printf("render: %s (%d Hz, %.2f s) -> %d Hz, carrier MIDI %d, %d bands\n",
+    std::printf("render: %s (%d Hz, %.2f s) -> %d Hz, carrier MIDI %d, %d bands, engine %d, air %.2f, clarity %.2f\n",
                 argv[1], srIn, static_cast<double>(in.size()) / srIn, sr, note,
-                FreeVox8DSP::kNumBands);
+                FreeVox8DSP::kNumBands, engine, air, clarity);
 
     FreeVox8DSP dsp;
     dsp.prepare(static_cast<double>(sr), 512, 2);
     FreeVox8DSP::Parameters p;
-    p.engineMode = 0; // filterbank
+    p.engineMode = engine; // 0 filterbank, 1 Spectral Ghost 1024
     p.mode = FreeVox8DSP::Mode::Vocoder;
     p.mix = 1.0f;
-    p.carrierBlend = 1.0f; // pure internal carrier
+    p.carrierBlend = 1.0f; // pure internal carrier (filterbank; Ghost uses its own fixed blend)
     p.maskDepth = 0.5f;
-    p.clarity = 0.55f;
+    p.clarity = clarity;
     p.formantShift = 0.0f;
     p.ghost = 0.0f;
-    p.air = 0.0f;
+    p.air = air;
     p.freeze = 0.0f;
     p.transientProtect = 0.0f;
     p.stereoWidth = 1.0f;

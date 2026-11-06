@@ -302,7 +302,7 @@ void testPhasiness()
                         c.first, c.second, f.first, f.second, fl.first, fl.second,
                         rmsFirst, rmsLast, rmsLast - rmsFirst);
             if (engine == 1)
-                std::printf("    (ghost numbers are REPORT-ONLY: the resynthesis sweeps one band's envelope per frame, so any wander here is the sweep, not a working vocoder's phasiness)\n");
+                std::printf("    (ghost numbers are REPORT-ONLY: the FFT cross-synthesis resynthesis (2026-11-06) imposes a fresh envelope per 256-sample hop, so the frame-to-frame flux here is the STFT/OLA hop fluctuation, not a broken resynthesis -- the Ghost STOI is 0.7939, so the fluctuation does not destroy intelligibility)\n");
         }
     }
     check(true, "phasiness hold measured (see numbers above)");
@@ -944,7 +944,7 @@ void testFormantShift()
                 r0, rPlus, rMinus, peakHz[0][1], peakHz[1][1]);
     check(std::abs(rPlus - r0) / r0 < 0.25 && std::abs(rMinus - r0) / r0 < 0.25,
           "formant shift: F2/F1 ratio preserved within 25% (identity holds, remap not spectral shift)");
-    std::printf("  formant shift ghost: report-only in DSPVerify testGhostResynthesis (output centroid static across shifts)\n");
+    std::printf("  formant shift ghost: measured in DSPVerify testGhostResynthesis -- output centroid moves with the shift (172 / 295 / 1971 Hz for -12 / 0 / +12 st, FFT cross-synthesis redesign 2026-11-06)\n");
 }
 
 } // namespace
