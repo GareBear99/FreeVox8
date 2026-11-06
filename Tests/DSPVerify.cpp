@@ -21,10 +21,13 @@
 //   6. Freeze toggle: max sample-to-sample jump across the toggle.
 //   7. Ghost resynthesis (FFT cross-synthesis, 2026-11-06): the four
 //      sub-tests that the old swept-envelope resynthesis failed —
-//      formant-shift centroid moves, burst transfer > 5x, morph
-//      spectral balance moves > 6 dB, Mask pocket ratio < 0.7 — are
-//      asserting checks now. The filterbank controls stay report-only
-//      (the 5x burst bar is rough on a skirt-dominated probe).
+//      formant-shift centroid moves, burst transfer > 3x and >= 0.8x
+//      the envelope ratio, morph spectral balance moves > 6 dB, Mask
+//      pocket ratio < 0.7 — are asserting checks now. The filterbank
+//      controls stay report-only (the burst bar was recalibrated
+//      2026-11-06: the old 5x bar sat above what the probe's envelope
+//      spans — Ghost envelope 4.71x, filterbank control 4.00x — so 5x
+//      is not a property either engine can show here).
 //   8. FFT unit test (impulse/sine/DC/round-trip) for FreeVox8FFT.
 //
 // No audio is written to disk; all signals are synthesised in memory with a
