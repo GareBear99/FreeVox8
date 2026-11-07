@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 - 2026-11-07 (Ghost FFT redesign + docs)
+
+- Ghost FFT cross-synthesis redesign (rank 9, Decision 5): replaced the Goertzel `analyseBins()` with windowed-FFT `analyseRing()` and true per-frame spectral cross-synthesis — all 9 resynthesis checks pass, silence in gives silence out, Ghost STOI 0.7939 beats TAL-Vocoder 3.0.3 (0.7434); Ghost CPU ~2.5% at 44.1 kHz (was ~39%).
+- WASPAA β/λ intraframe sweep correction: pilot ran 2026-11-06 and FAILED its pre-written ≥ 3 dB rule (best +0.47 dB; ARC Audio Bench cross-check 0.03 dB) — the correction stays out and is NOT future work; the freeze-blur fix path is the sinusoidal-model freeze (ProVox8-scale research).
+- Corrected stale WASPAA docs (the correction was presented as the designated / highest-value / primary-future-work fix) in PAPER.md, the DSP architecture, world-class spec, and production audit docs.
+- Regenerated the release-evidence manifest (60 files, 2026-11-07).
+- Ghost STOI: treat as ~0.78–0.79 with a ~0.014 run-to-run spread (a second independent render measured 0.7796); the 0.7939 overall and the TAL-beating conclusion stand.
+
 ## 0.5.0 - Dual-engine spectral vocoder RC
 
 - Upgraded default realtime engine from 64 to 128 log-spaced bands.

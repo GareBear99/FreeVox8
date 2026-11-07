@@ -35,7 +35,20 @@ limitation that REMAINS is the intraframe smear on frozen vibrato
 (§5): the FFT analysis still assumes a stationary spectrum within
 each 1024-sample frame, so a frozen vibrato snapshot loses ~5 dB
 of peak concentration. The Bristow-Johnson/Bogdanowicz correction
-is the identified treatment and remains primary future work.
+was piloted 2026-11-06 and FAILED its pre-written ≥ 3 dB rule (best
++0.47 dB; ARC Audio Bench cross-check 0.03 dB), so it stays out and
+is NOT primary future work — the remaining fix path is the
+sinusoidal-model freeze (ProVox8-scale research, §6.1).
+
+**Status (2026-11-07, v0.5.0, HEAD `7f74987`, 16 commits):**
+FreeVox8 has NEVER been built as a plugin anywhere — no JUCE in the
+repo, no `JUCE_DIR`, no pluginval run, no DAW test. Rank 10 /
+Decision 4 (Mac build + pluginval strictness 10 + one DAW smoke
+test) is OPEN and is the most important next step (§8). Ghost STOI
+is ~0.78–0.79 with a ~0.014 run-to-run spread (a second independent
+render measured 0.7796; §3.8). Deep Vox work comes later per Gary —
+this repo is left alone for now except for keeping the paper and
+READMEs up to date.
 
 ---
 
@@ -57,7 +70,10 @@ FreeVox8 is a single-codebase JUCE/C++ plugin producing VST3 and AU targets.
 filterbank core (Low Latency 128) plus Spectral Ghost 1024 STFT/OLA backend.
 Vocoder, Mask, Ghost, and Morph modes. MIDI carrier, sidechain bus, formant
 shift, freeze, transient protect, stereo width, air excitation. 24 factory
-presets. No audio restrictions during real-time playback. Offline export
+presets in JSON — but there is NO preset loading in the plugin yet
+(`getNumPrograms()` returns 1, program methods are no-ops), so the
+presets are hollow as shipped; working in-plugin preset loading is
+still owed. No audio restrictions during real-time playback. Offline export
 certification pending v1.0.0 release gate.
 
 **ProVox8 (roadmap):** Extended band count, advanced spectral morph, intraframe
@@ -436,7 +452,14 @@ paper §7):
   0.8018, slt 0.7860) — above TAL-Vocoder 3.0.3 at 0.7434 on the
   same corpus. The Ghost's weakest band is 300 Hz (0.6442); its
   strongest are 150 Hz (0.8627) and 378 Hz (0.8937), both above
-  TAL there. Ghost CPU 0.57% / 2.46% / 2.56% realtime at 44.1 kHz
+  TAL there. **Note (2026-11-07): treat Ghost STOI as ~0.78–0.79
+  with a ~0.014 run-to-run spread, not a single exact figure — a
+  second independent Ghost render (`renders-trackb-ghost/`)
+  measured 0.7796 (bdl 0.7941, slt 0.7651), and only 4 of the 15
+  per-band means above re-derive exactly from the surviving
+  per-file JSONs; the other 12 bands need re-derivation. The
+  0.7939 overall and the TAL-beating conclusion stand.** Ghost CPU
+  0.57% / 2.46% / 2.56% realtime at 44.1 kHz
   (blocks 64/512/2048, VM medians) — ~15–20× cheaper than the
   Goertzel engine it replaced (~39%).
 
@@ -704,6 +727,13 @@ No architectural changes are required — the modification is localised to
 `analyseBins()`. The `modRing` ring buffer and hop infrastructure are already
 sufficient.
 
+**Note (2026-11-07): `analyseBins()` no longer exists** — the rank-9
+FFT cross-synthesis redesign (2026-11-06) replaced the Goertzel
+`analyseBins()` with the windowed-FFT `analyseRing()` (§4.2), so the
+correction would now slot into `analyseRing()`, not `analyseBins()`.
+That is moot: the pilot below FAILED its pre-written rule, so the
+correction stays out regardless of where it would slot in.
+
 **Note from correspondence with Bristow-Johnson (June 2026):** In their SPEED
 vocoder implementation, the intraframe correction did not produce audible
 improvement in time-scaling tests. However, Bristow-Johnson noted that the
@@ -711,7 +741,9 @@ freeze use case is structurally different: time-scaling advances through frames
 (errors average out across the temporal sequence), whereas freeze loops a single
 frame indefinitely (errors accumulate). This asymmetry makes the correction more
 likely to have audible value in the freeze path than in time-scaling.
-Empirical verification is designated as primary future work (§6.1).
+Empirical verification was designated as primary future work (§6.1) —
+and it has now run: the pilot below FAILED its pre-written rule, so
+the correction stays out.
 
 **Pilot result (2026-11-05, `Tests/FreezePilot.cpp`): the correction was
 built and measured, and it FAILED the pre-written decision rule, so it is NOT
@@ -802,9 +834,12 @@ depends on the Mac CPU numbers (rank 10).
 
 ### 6.4 ProVox8 Tier
 
-Extended band count (256 bands), intraframe sweep correction, additional carrier
-synthesis modes (wavetable, noise-shaped), and session-safe linear-phase
-resynthesis. Same `#if PROVOX8` compile-time pattern as FreeEQ8/ProEQ8 [1].
+Extended band count (256 bands), sinusoidal-model freeze (the actual
+fix for the ~5 dB freeze blur — the WASPAA β/λ correction was piloted
+2026-11-06 and FAILED its ≥ 3 dB rule, §6.1, so it is not the fix and
+is not ProVox8 work), additional carrier synthesis modes (wavetable,
+noise-shaped), and session-safe linear-phase resynthesis. Same
+`#if PROVOX8` compile-time pattern as FreeEQ8/ProEQ8 [1].
 
 ### 6.5 Spectral Dynamics Mode
 
@@ -867,6 +902,16 @@ follower when the modulator signal is near zero. The `tanh()` saturation in
 ---
 
 ## 8. Production Gate
+
+**Status (2026-11-07): none of these boxes is checked.** FreeVox8
+has never been built as a plugin anywhere — no JUCE in the repo, no
+`JUCE_DIR`, no pluginval run, no DAW test. Rank 10 / Decision 4
+(Mac build + pluginval strictness 10 + one DAW smoke test) is OPEN
+and is the most important next step; all `docs/RELEASE_CHECKLIST.md`
+boxes are unchecked. Item 5 (factory preset/session restore) is
+additionally blocked: the 24 presets exist in JSON but there is no
+in-plugin preset loading (`getNumPrograms()` returns 1), so there is
+nothing to restore yet.
 
 Public binary release of FreeVox8 v1.0.0 requires:
 

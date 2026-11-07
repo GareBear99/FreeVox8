@@ -2,7 +2,9 @@
 
 **FreeVox8** is a JUCE-based spectral vocoder, ghost-freeze resynthesis, morph, and dynamic spectral masking plugin for vocals, synths, drums, and experimental sound design.
 
-This repository is a standalone plugin source package derived from the FreeEQ8 codebase hygiene patterns, not an EQ rename. The audio path is built around a dual engine: a conservative **128-band realtime-safe spectral vocoder core** plus a **Spectral Ghost 1024** high-resolution backend scaffold for ghost/freeze and morph resynthesis.
+This repository is a standalone plugin source package derived from the FreeEQ8 codebase hygiene patterns, not an EQ rename. The audio path is built around a dual engine: a conservative **128-band realtime-safe spectral vocoder core** plus a **Spectral Ghost 1024** high-resolution FFT cross-synthesis engine for ghost/freeze and morph resynthesis (rank 9, 2026-11-06 — the Ghost resynthesis works, STOI ~0.78–0.79, above TAL-Vocoder 3.0.3 at 0.7434; see PAPER.md §3.8).
+
+**Status (2026-11-07, v0.5.0, HEAD `7f74987`):** source-complete for local JUCE compilation, but **FreeVox8 has never been built as a plugin anywhere** — no JUCE in the repo, no pluginval run, no DAW test. Rank 10 / Decision 4 (Mac build + pluginval strictness 10 + one DAW smoke test) is OPEN and is the most important next step. The WASPAA β/λ correction was piloted 2026-11-06 and FAILED its ≥ 3 dB rule (best +0.47 dB) — it stays out; the freeze-blur fix path is the sinusoidal-model freeze (ProVox8-scale research). Deep Vox work comes later per Gary — this repo is left alone for now except for keeping the paper and READMEs up to date.
 
 ## Current feature set
 
@@ -39,7 +41,7 @@ python3 scripts/validate_repo.py
 
 ## Production gate
 
-This package is source-complete for local JUCE compilation, but public binary release certification still requires:
+This package is source-complete for local JUCE compilation, but no plugin build has ever been done from this repo, and public binary release certification still requires:
 
 1. Release build on target OS.
 2. pluginval strictness 10.

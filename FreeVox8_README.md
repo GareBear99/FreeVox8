@@ -33,7 +33,7 @@ The architecture employs a dual-engine design: a **128-band log-spaced filterban
 
 ## ⬇️ Status
 
-FreeVox8 v0.5.0 is a **production-hardened source release candidate**. The DSP architecture, dual-engine design, factory presets, and release documentation are complete. Public binary certification requires local JUCE build, pluginval strictness-10 pass, and DAW smoke tests. See [Production Gate](#-production-gate).
+FreeVox8 v0.5.0 is a **production-hardened source release candidate**. The DSP architecture, dual-engine design, and release documentation are complete. **FreeVox8 has never been built as a plugin anywhere** — no JUCE in the repo, no pluginval run, no DAW test; Rank 10 / Decision 4 (Mac build + pluginval strictness 10 + one DAW smoke test) is OPEN and is the most important next step. The 24 factory presets exist in JSON, but there is **no preset loading in the plugin yet** (`getNumPrograms()` returns 1, program methods are no-ops) — the presets are hollow as shipped, and working in-plugin preset loading is still owed. Public binary certification requires local JUCE build, pluginval strictness-10 pass, and DAW smoke tests. See [Production Gate](#-production-gate).
 
 ## ✨ Features
 
@@ -48,7 +48,7 @@ FreeVox8 v0.5.0 is a **production-hardened source release candidate**. The DSP a
 | **Vocoder** | Classic carrier × modulator envelope spectral vocoder |
 | **Mask** | Spectral pocket carving — removes frequency content matching the modulator |
 | **Ghost** | Freeze-enhanced vocoder with spectral ghost overlay |
-| **Morph** | Nonlinear blend of vocoded and dry signal via tanh saturation |
+| **Morph** | Real two-envelope morph — interpolates two modulator envelopes per band (`e = (1−α)·e₁ + α·e₂`), imposed on one carrier (the old blend formula was removed 2026-11-05) |
 
 ### Signal Path
 - MIDI-controlled internal carrier: saw / sine / pulse / sub blend
@@ -94,11 +94,11 @@ Main Input / Sidechain ──→ Parameter Snapshot ──→ Engine Selector
                Low Latency 128                                        Spectral Ghost 1024
          (128 log-spaced bands)                                  (1024-pt STFT / OLA)
                           │                                                          │
-           Per-band IIR envelope follower                       analyseBins() — Goertzel DFT
+           Per-band IIR envelope follower                       analyseRing() — windowed FFT
            Freeze memory (running average)                      Freeze snapshot (single frame)
            Carrier synthesis (saw/sine/pulse/sub)               OLA resynthesis (256-hop, Hann)
            Vocoder / Mask / Ghost / Morph modes                 Vocoder / Ghost / Morph modes
-           Formant shift (envelope remap)                       Formant shift (envelope remap)
+           Formant shift (envelope remap)                       Formant shift (exact frequency-ratio remap)
            Air / Transient / Width / Quality                    Air / Clarity / Width
                           │                                                          │
                           └──────────────────────────────┬──────────────────────────┘
@@ -106,7 +106,7 @@ Main Input / Sidechain ──→ Parameter Snapshot ──→ Engine Selector
                                     Output Safety → Atomic Display Taps → UI
 ```
 
-See [PAPER.md](PAPER.md) for the full DSP architecture paper including the known intraframe smear limitation in Spectral Ghost 1024 and the planned Bristow-Johnson/Bogdanowicz correction.
+See [PAPER.md](PAPER.md) for the full DSP architecture paper including the known intraframe smear limitation in Spectral Ghost 1024 and the WASPAA correction pilot, which FAILED its pre-written ≥ 3 dB rule on 2026-11-06 (best +0.47 dB) and stays out — the freeze-blur fix path is the sinusoidal-model freeze (ProVox8-scale research).
 
 ## 🔬 DSP Paper
 
@@ -114,7 +114,7 @@ See [PAPER.md](PAPER.md) for the full DSP architecture paper including the known
 - Dual-engine design rationale
 - Low Latency 128 filterbank implementation (band layout, carrier synthesis, envelope analysis, freeze, modes, formant shift)
 - Spectral Ghost 1024 STFT/OLA implementation
-- Known intraframe smear limitation and the Bristow-Johnson/Bogdanowicz correction (WASPAA 2001)
+- Known intraframe smear limitation and the WASPAA correction pilot (FAILED 2026-11-06, best +0.47 dB vs the ≥ 3 dB rule — the correction stays out)
 - Real-time safety architecture
 - Production gate requirements
 - Correspondence with Robert Bristow-Johnson (June 2026)
@@ -145,7 +145,7 @@ FreeVox8 v1.0.0 public binary requires:
 2. pluginval strictness-level-10 pass for VST3 + AU
 3. DAW smoke tests: Ableton Live, REAPER, Logic Pro
 4. Golden test suite pass (`docs/DSP_GOLDEN_TESTS.md`)
-5. 24 factory presets — save/restore verified
+5. 24 factory presets — save/restore verification (blocked: no in-plugin preset loading yet — `getNumPrograms()` returns 1)
 6. Signed/notarized installer or clearly labeled unsigned build
 7. Release evidence pack (`scripts/make_evidence_pack.py`)
 
@@ -176,17 +176,16 @@ FreeVox8 v1.0.0 public binary requires:
 - [x] Formant shift (RT-safe envelope remap)
 - [x] Air / Transient Protect / Stereo Width / Quality macros
 - [x] 128-bin atomic spectral display
-- [x] 24 factory presets
+- [x] 24 factory presets (in JSON — in-plugin preset loading is NOT implemented yet, `getNumPrograms()` returns 1)
 - [x] ARC governance, golden tests, production audit docs
 
 ### v0.6.0 — SIMD + Performance
-- [ ] AVX2/SSE2 vectorisation of `analyseBins()` inner loop
+- [ ] SIMD vectorisation of the filterbank (128 biquads + envelope followers — the expensive engine now, ~47% at 44.1 kHz on the VM; the Ghost is ~2.5% since the rank-9 FFT redesign, so there is no SIMD target left in the Ghost)
 - [ ] CPU profiling report for Spectral Ghost 1024
 - [ ] Pluginval strictness-10 CI integration
 
-### v0.7.0 — Intraframe Sweep Correction
-- [ ] Bristow-Johnson/Bogdanowicz β/λ estimation in `analyseBins()` (PAPER.md §6.1)
-- [ ] Empirical freeze smear A/B test (vibrato vocal, with/without correction)
+### v0.7.0 — Intraframe Sweep Correction — CANCELLED
+- [x] ~~Bristow-Johnson/Bogdanowicz β/λ estimation in `analyseBins()` (PAPER.md §6.1)~~ — **CANCELLED 2026-11-07.** The pilot ran 2026-11-06 and FAILED its pre-written ≥ 3 dB rule (best +0.47 dB on the frozen snapshot; ARC Audio Bench cross-check 0.03 dB). The correction stays out and is NOT future work. The Goertzel `analyseBins()` it would have slotted into no longer exists (rank-9 FFT redesign). The freeze-blur fix path is the sinusoidal-model freeze (ProVox8-scale research, PAPER.md §6.1).
 - [ ] Phase vocoder backend scaffold
 
 ### v1.0.0 — Public Binary Release
@@ -196,7 +195,7 @@ FreeVox8 v1.0.0 public binary requires:
 
 ### ProVox8 (Roadmap)
 - [ ] 256-band filterbank
-- [ ] Intraframe sweep correction
+- [ ] Sinusoidal-model freeze (the actual fix for the ~5 dB freeze blur — the WASPAA correction failed its pilot and stays out)
 - [ ] Wavetable + noise-shaped carrier modes
 - [ ] Spectral Dynamics mode (per-bin threshold clamping)
 
