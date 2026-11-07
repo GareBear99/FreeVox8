@@ -2,53 +2,13 @@
   "product": "FreeVox8",
   "version": "0.5.0",
   "kind": "source-release-candidate-evidence",
-  "generated_utc": "2026-05-04T01:00:14Z",
-  "file_count": 46,
+  "generated_utc": "2026-11-07T08:31:43Z",
+  "file_count": 60,
   "files": [
     {
-      "path": ".gitattributes",
-      "sha256": "e2ec3d690ecd42cbef8b4b1048f4b82644392fb763ad8a9c0951fdf88fc72f0c",
-      "bytes": 672
-    },
-    {
-      "path": ".github/FUNDING.yml",
-      "sha256": "93a8d75ae2340f0c04c1cb11700a2e4cc2e0ae3882d04f6f1b54ea44f835af07",
-      "bytes": 72
-    },
-    {
-      "path": ".github/ISSUE_TEMPLATE/bug_report.md",
-      "sha256": "b237217504b341f6067b71c5b157c29537bf9bff35b7911f8804a2c908b36043",
-      "bytes": 232
-    },
-    {
-      "path": ".github/ISSUE_TEMPLATE/config.yml",
-      "sha256": "243f9664912bfc913e9b8549a93f7d5c8b35964d7af71507ec77df22a3b5f2e9",
-      "bytes": 188
-    },
-    {
-      "path": ".github/ISSUE_TEMPLATE/feature_request.md",
-      "sha256": "3304621e25e8110b44fb1ca5ef8c21724280c62391ac6ee37cce5dadf4389881",
-      "bytes": 173
-    },
-    {
-      "path": ".github/pull_request_template.md",
-      "sha256": "c401fac955422fba04571caec29fcf4e255b949a633e1ef69e6ff198eeb2792c",
-      "bytes": 359
-    },
-    {
-      "path": ".github/workflows/release.yml",
-      "sha256": "02a5a0755de5d325a8467a247abb8a0a942de4ba2a5333b758c140fdb44679a1",
-      "bytes": 530
-    },
-    {
       "path": ".gitignore",
-      "sha256": "86f3d1b30332e3ecc288402e48584945e13f0bb0be86d1b614f2f6a7bb75cfde",
-      "bytes": 590
-    },
-    {
-      "path": ".gitmodules",
-      "sha256": "7eb92d921a133a3148be13eaf4d09715e4dbbc7c42cbe023461719f720e1d118",
-      "bytes": 82
+      "sha256": "554014a1d8b62773d6f9aca86746581948bc06a86c72bc18f775b04306ca5ba2",
+      "bytes": 101
     },
     {
       "path": "CHANGELOG.md",
@@ -57,8 +17,8 @@
     },
     {
       "path": "CMakeLists.txt",
-      "sha256": "85c868598e44ac60923fd0a5b178ef54efbdd19c3ce1ceb7803ba3dea56b5173",
-      "bytes": 1981
+      "sha256": "4434505d26d889eaf0622e470a64dd029c60c6186ffed7d28ce450b67a3dcf1e",
+      "bytes": 2391
     },
     {
       "path": "CODE_OF_CONDUCT.md",
@@ -71,14 +31,39 @@
       "bytes": 669
     },
     {
+      "path": "FREEVOX8_DSP_ARCHITECTURE.md",
+      "sha256": "6b34216285fa34d7a9096128b395336c7f99a6fd648b55f14f91fca2e454c4cc",
+      "bytes": 3268
+    },
+    {
+      "path": "FreeVox8_CHANGELOG.md",
+      "sha256": "44b41abe4b66f93a1d95efcd5efb4d306c3c70e90c0bde5de81b6a87cc35c2cc",
+      "bytes": 2854
+    },
+    {
+      "path": "FreeVox8_PRODUCTION_AUDIT.md",
+      "sha256": "9746256ed9ef80ffdb5b5c2ba258c72e119bbf521f5f93d991523e28010fdf72",
+      "bytes": 1890
+    },
+    {
+      "path": "FreeVox8_README.md",
+      "sha256": "f181f1156d1a54b4aaac2b597b9de506736fee0741005684ff45fcd520b95a2e",
+      "bytes": 14326
+    },
+    {
       "path": "LICENSE",
       "sha256": "02ad75e54bfa8212ff8061086eacd619e008c46930640c18718c823d07a38ffd",
       "bytes": 35481
     },
     {
+      "path": "PAPER.md",
+      "sha256": "9cd301fb4c957e90d1bb06b7637b83bea1771db45334c84d37cf6a7c47e9ba80",
+      "bytes": 47561
+    },
+    {
       "path": "README.md",
-      "sha256": "ac03ce53d4946231ede7ed8ac273c738782e09b54243fa1b7656981fc83a29b3",
-      "bytes": 2439
+      "sha256": "8abc2116e652d9e454663d8dcd9230eb6b66ff551f759a10e10bf986f6b1eed6",
+      "bytes": 2464
     },
     {
       "path": "RELEASE_MANIFEST.json",
@@ -97,13 +82,18 @@
     },
     {
       "path": "Source/DSP/FreeVox8DSP.h",
-      "sha256": "bf10b4989fddcca4451df6c2dc03d86b3ce4863a87cc8646a844b739944421f2",
-      "bytes": 15636
+      "sha256": "211215ea3c03307b27975bfdcff7930dfcf4ad8872aa5b9e48d7dfd22a77af46",
+      "bytes": 31558
+    },
+    {
+      "path": "Source/DSP/FreeVox8FFT.h",
+      "sha256": "40994f142f4bb30732fcc605230127a65a0c433b488372ff25c10f05d1cd4703",
+      "bytes": 3215
     },
     {
       "path": "Source/DSP/FreeVox8SpectralEngine.h",
-      "sha256": "5d82dcbd3a4d6a1e2db11822b7839e06eccaa528d2bdf49674a82baf3afe0d64",
-      "bytes": 5989
+      "sha256": "fc25ce3fb4588bce8d3c6650f8c3ec1b6cdaa9e785b3c4d306165c4adb23c37c",
+      "bytes": 15601
     },
     {
       "path": "Source/PluginEditor.cpp",
@@ -122,8 +112,8 @@
     },
     {
       "path": "Source/PluginProcessor.h",
-      "sha256": "e5bf6c353db074dd3da1f259a4b4ce77b78412c53adb859abf95a76a51ef80ba",
-      "bytes": 1792
+      "sha256": "cb83e9b0cad8bf7437199fd91130a368976dbbadd60ff336c28568ebba5fbe02",
+      "bytes": 2113
     },
     {
       "path": "Source/UI/SpectralDisplay.h",
@@ -131,9 +121,89 @@
       "bytes": 411
     },
     {
+      "path": "Tests/ArtefactTaxonomy.cpp",
+      "sha256": "89baf536e6713fbac87d8152a70fae8eb247e1f37cc19c96896a0992576bc3ba",
+      "bytes": 42979
+    },
+    {
+      "path": "Tests/DSPVerify.cpp",
+      "sha256": "0931ff7fcb05fcbab95974d01a06a6e1bee7a59deb55d86f38ca8d8af1c1e07a",
+      "bytes": 48835
+    },
+    {
+      "path": "Tests/FreezePilot.cpp",
+      "sha256": "3db838f971d276818bc6d7c9c8d3c72fb3fa66f343cbf9d530be47266ad5f41a",
+      "bytes": 29212
+    },
+    {
+      "path": "Tests/GhostMaskPumping.cpp",
+      "sha256": "e7145c422475d5f8ded0015ce12a14adfcaf9594eb1400be9cbdad14b6aaa541",
+      "bytes": 18437
+    },
+    {
+      "path": "Tests/MaskPumping.cpp",
+      "sha256": "7800f340157d918f78c9ec97cff0dc610947dc8fde2f2060c14f6840d734e5cb",
+      "bytes": 30626
+    },
+    {
+      "path": "Tests/RenderCorpus.cpp",
+      "sha256": "03905a551434405bc7158772b5b7796fb67df9ec098cd838f9e3846016e64772",
+      "bytes": 10874
+    },
+    {
+      "path": "Tests/RenderListening.cpp",
+      "sha256": "0eb14cd467abc282bb3a987bf9337238b3c6ca94fcb9481b84b2b8144288237b",
+      "bytes": 21500
+    },
+    {
       "path": "Tests/RepoAudit.cpp",
       "sha256": "cdba7d41929f69ba9d5695c2e5648124b8dee76978b5eb949f303cfd7f661549",
       "bytes": 673
+    },
+    {
+      "path": "Tests/build_artefact.sh",
+      "sha256": "b216d9fce1ccda38b1ddaabdf48de62a416c1a5c3def56b2b204a7e3c6346958",
+      "bytes": 1161
+    },
+    {
+      "path": "Tests/build_dspverify.sh",
+      "sha256": "002dd6be5f44ab583999e5788dc8d05cd3414eef742ddfa8f710bf080d12dbe2",
+      "bytes": 1116
+    },
+    {
+      "path": "Tests/build_ghostmask.sh",
+      "sha256": "36f38c0f9b25e88a5bc7890a97af5cf2c3ca4896cf1581adaa32130330b1cfb5",
+      "bytes": 1073
+    },
+    {
+      "path": "Tests/build_listening.sh",
+      "sha256": "8bac4551e677057ef256ddbe05f71ef840418c436afb64641acda2d9de1de15b",
+      "bytes": 1153
+    },
+    {
+      "path": "Tests/build_maskpump.sh",
+      "sha256": "dede3ca9beff782845d4d41b4d410c6cba3ee5e15a9f8834ade908c9d3f366e8",
+      "bytes": 1046
+    },
+    {
+      "path": "Tests/build_render.sh",
+      "sha256": "b627512673c63c51f35c5e17d502bca58385b5e581e942eee8a3d88011f74757",
+      "bytes": 1551
+    },
+    {
+      "path": "Tests/juce_modules.cpp",
+      "sha256": "7f4186516598671b304b47d09f15b5eb1416c8dbf82eaf76224b3c276385a559",
+      "bytes": 448
+    },
+    {
+      "path": "Tests/render_corpus.sh",
+      "sha256": "31ca6853819c270b32372179d65d645b495a8b9990d6bdcc09b714f00985623b",
+      "bytes": 1719
+    },
+    {
+      "path": "WORLD_CLASS_SPECTRAL_VOCODER_SPEC.md",
+      "sha256": "69edc5b3a42e9e61c76f50415ea217d50e75a0fe1cb65d7ce8baab896138d695",
+      "bytes": 2110
     },
     {
       "path": "assets/social-preview.svg",
@@ -232,8 +302,8 @@
     },
     {
       "path": "scripts/validate_repo.py",
-      "sha256": "0bf81efb43c6d16ae359fd42ac6473f746c6495df85b59b9bf7a7f61ed2e9571",
-      "bytes": 3878
+      "sha256": "a2132bf03f507fd0299532abaa670527d46e113e502fa651304184a37737348b",
+      "bytes": 3908
     }
   ]
 }
